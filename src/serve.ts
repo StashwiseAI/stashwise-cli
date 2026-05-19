@@ -59,7 +59,7 @@ const TOOL_DEFINITION = {
 function notAuthenticatedHint(): string {
   return [
     "Stashwise MCP is not authenticated.",
-    "Run `npx -y @stashwise/mcp auth` in a terminal to link this agent to your Stashwise account.",
+    "Run `npx -y @stashwiseapp/mcp auth` in a terminal to link this agent to your Stashwise account.",
   ].join(" ");
 }
 
@@ -68,7 +68,7 @@ export async function runServe(): Promise<number> {
   const api = new StashwiseApi(config);
 
   const server = new Server(
-    { name: "@stashwise/mcp", version: "0.1.0" },
+    { name: "@stashwiseapp/mcp", version: "0.1.0" },
     { capabilities: { tools: {} } },
   );
 

@@ -55,7 +55,7 @@ export async function runDoctor(): Promise<number> {
     ok: Boolean(token),
     detail: token
       ? `${token.slice(0, 14)}… (via ${keychainBackend()})`
-      : "no token — run `npx -y @stashwise/mcp auth`",
+      : "no token — run `npx -y @stashwiseapp/mcp auth`",
   });
 
   if (token && backendOk) {

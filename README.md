@@ -1,4 +1,4 @@
-# @stashwise/mcp
+# @stashwiseapp/mcp
 
 Search your Stashwise library + wiki from any AI agent — Claude Code, Codex CLI, Cursor, Claude desktop.
 
@@ -13,7 +13,7 @@ Drop one block into your agent host's MCP config — no separate install step.
   "mcpServers": {
     "stashwise": {
       "command": "npx",
-      "args": ["-y", "@stashwise/mcp"]
+      "args": ["-y", "@stashwiseapp/mcp"]
     }
   }
 }
@@ -26,13 +26,13 @@ Drop one block into your agent host's MCP config — no separate install step.
 ```toml
 [mcp_servers.stashwise]
 command = "npx"
-args = ["-y", "@stashwise/mcp"]
+args = ["-y", "@stashwiseapp/mcp"]
 ```
 
 ## One-time login
 
 ```sh
-npx -y @stashwise/mcp auth
+npx -y @stashwiseapp/mcp auth
 ```
 
 Opens [stashwise.co/cli](https://stashwise.co/cli) in your browser. Sign in, click Authorize, and the CLI stores a long-lived token in your OS keychain. The agent picks it up automatically on its next tool call.
@@ -64,7 +64,7 @@ One tool, `search_stashwise(query, k, scope)`. Returns ranked snippets from your
 ## Diagnostics
 
 ```sh
-npx -y @stashwise/mcp doctor
+npx -y @stashwiseapp/mcp doctor
 ```
 
 Prints config, token validity, and backend reachability. Use when the agent reports it can't reach your Stashwise content.

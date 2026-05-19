@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Stashwise MCP entrypoint.
 //
-//   npx -y @stashwise/mcp           → stdio MCP server (default)
-//   npx -y @stashwise/mcp auth      → one-time device-code login
-//   npx -y @stashwise/mcp doctor    → config + token + backend health
+//   npx -y @stashwiseapp/mcp           → stdio MCP server (default)
+//   npx -y @stashwiseapp/mcp auth      → one-time device-code login
+//   npx -y @stashwiseapp/mcp doctor    → config + token + backend health
 //
 // Codex's review confirmed: a separate CLI binary buys nothing — single
 // binary with subcommand modes is the production pattern (Stripe, Linear,
@@ -31,9 +31,9 @@ function printHelp(): void {
       "Stashwise MCP — search your Stashwise library + wiki from any AI agent.",
       "",
       "Usage:",
-      "  npx -y @stashwise/mcp           Start the stdio MCP server (default).",
-      "  npx -y @stashwise/mcp auth      Pair this machine with your Stashwise account.",
-      "  npx -y @stashwise/mcp doctor    Check config, token, and backend reachability.",
+      "  npx -y @stashwiseapp/mcp           Start the stdio MCP server (default).",
+      "  npx -y @stashwiseapp/mcp auth      Pair this machine with your Stashwise account.",
+      "  npx -y @stashwiseapp/mcp doctor    Check config, token, and backend reachability.",
       "",
       "Environment:",
       "  STASHWISE_API_URL   Override the backend URL (default https://stashwise-api.fly.dev/api/v1).",

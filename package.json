@@ -1,10 +1,10 @@
 {
-  "name": "@stashwise/mcp",
-  "version": "0.1.0",
+  "name": "@stashwiseapp/mcp",
+  "version": "0.1.1",
   "description": "Stashwise MCP server — query your saved library and wiki from any AI agent (Claude Code, Codex, Cursor, Claude desktop).",
   "type": "module",
   "bin": {
-    "stashwise-mcp": "./dist/index.js"
+    "mcp": "./dist/index.js"
   },
   "files": [
     "dist",
