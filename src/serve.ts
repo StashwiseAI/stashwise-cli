@@ -14,6 +14,8 @@ import { z } from "zod";
 import { ApiError, StashwiseApi } from "./api.js";
 import { loadConfig } from "./config.js";
 import { getStoredToken } from "./keychain.js";
+import { notAuthenticatedHint } from "./messages.js";
+import { VERSION } from "./version.js";
 
 const SearchInputSchema = z.object({
   query: z
@@ -56,19 +58,12 @@ const TOOL_DEFINITION = {
   },
 };
 
-function notAuthenticatedHint(): string {
-  return [
-    "Stashwise MCP is not authenticated.",
-    "Run `npx -y @stashwiseapp/mcp auth` in a terminal to link this agent to your Stashwise account.",
-  ].join(" ");
-}
-
 export async function runServe(): Promise<number> {
   const config = loadConfig();
   const api = new StashwiseApi(config);
 
   const server = new Server(
-    { name: "@stashwiseapp/mcp", version: "0.1.0" },
+    { name: "@stashwiseapp/mcp", version: VERSION },
     { capabilities: { tools: {} } },
   );
 
