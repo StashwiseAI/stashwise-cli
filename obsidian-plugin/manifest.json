@@ -1,0 +1,10 @@
+{
+  "id": "stashwise-sync",
+  "name": "Stashwise Sync",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Sync your Stashwise wiki into local Obsidian Markdown notes.",
+  "author": "Stashwise",
+  "authorUrl": "https://stashwise.co",
+  "isDesktopOnly": false
+}

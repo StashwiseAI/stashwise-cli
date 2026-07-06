@@ -1,0 +1,38 @@
+.stashwise-sync-progress {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  margin: 12px 0;
+  padding: 12px;
+}
+
+.stashwise-sync-progress__header {
+  align-items: center;
+  color: var(--text-normal);
+  display: flex;
+  font-weight: 600;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.stashwise-sync-progress__bar {
+  background: var(--background-modifier-border);
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.stashwise-sync-progress__fill {
+  background: var(--interactive-accent);
+  border-radius: inherit;
+  height: 100%;
+  transition: width 180ms ease;
+}
+
+.stashwise-sync-progress__meta,
+.stashwise-sync-progress__detail {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.4;
+  margin-top: 8px;
+}
