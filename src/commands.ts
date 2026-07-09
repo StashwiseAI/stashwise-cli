@@ -1,0 +1,5 @@
+export const STASHWISE_MCP_PACKAGE_SPEC = "@stashwiseapp/mcp@latest";
+export const STASHWISE_MCP_RUN_COMMAND = `npx -y --package ${STASHWISE_MCP_PACKAGE_SPEC} mcp`;
+export const STASHWISE_MCP_AUTH_COMMAND = `${STASHWISE_MCP_RUN_COMMAND} auth`;
+export const STASHWISE_MCP_SEARCH_COMMAND = `${STASHWISE_MCP_RUN_COMMAND} search`;
+export const STASHWISE_MCP_DOCTOR_COMMAND = `${STASHWISE_MCP_RUN_COMMAND} doctor`;

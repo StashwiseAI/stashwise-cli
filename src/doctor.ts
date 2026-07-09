@@ -3,6 +3,7 @@
 // don't need a separate CLI binary to diagnose problems.
 
 import { ApiError, StashwiseApi } from "./api.js";
+import { STASHWISE_MCP_AUTH_COMMAND } from "./commands.js";
 import { loadConfig } from "./config.js";
 import { getStoredToken, keychainBackend } from "./keychain.js";
 
@@ -55,7 +56,7 @@ export async function runDoctor(): Promise<number> {
     ok: Boolean(token),
     detail: token
       ? `${token.slice(0, 14)}… (via ${keychainBackend()})`
-      : "no token — run `npx -y @stashwiseapp/mcp auth`",
+      : `no token — run \`${STASHWISE_MCP_AUTH_COMMAND}\``,
   });
 
   if (token && backendOk) {

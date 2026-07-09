@@ -1,16 +1,22 @@
 #!/usr/bin/env node
 // Stashwise MCP entrypoint.
 //
-//   npx -y @stashwiseapp/mcp                 → stdio MCP server (default)
-//   npx -y @stashwiseapp/mcp auth            → one-time device-code login
-//   npx -y @stashwiseapp/mcp search "..."    → search from the terminal
-//   npx -y @stashwiseapp/mcp doctor          → config + token + backend health
+//   npx -y --package @stashwiseapp/mcp@latest mcp              → stdio MCP server (default)
+//   npx -y --package @stashwiseapp/mcp@latest mcp auth         → one-time device-code login
+//   npx -y --package @stashwiseapp/mcp@latest mcp search "..." → search from the terminal
+//   npx -y --package @stashwiseapp/mcp@latest mcp doctor       → config + token + backend health
 //
 // Codex's review confirmed: a separate CLI binary buys nothing — single
 // binary with subcommand modes is the production pattern (Stripe, Linear,
 // Atlassian, every other MCP server in 2026 ships this way).
 
 import { runAuth } from "./auth.js";
+import {
+  STASHWISE_MCP_AUTH_COMMAND,
+  STASHWISE_MCP_DOCTOR_COMMAND,
+  STASHWISE_MCP_RUN_COMMAND,
+  STASHWISE_MCP_SEARCH_COMMAND,
+} from "./commands.js";
 import { runDoctor } from "./doctor.js";
 import { runSearch } from "./search.js";
 import { runServe } from "./serve.js";
@@ -36,11 +42,11 @@ function printHelp(): void {
       "Stashwise MCP — search your Stashwise library + wiki from any AI agent, or your terminal.",
       "",
       "Usage:",
-      "  npx -y @stashwiseapp/mcp                 Start the stdio MCP server (default).",
-      "  npx -y @stashwiseapp/mcp auth            Pair this machine with your Stashwise account.",
-      '  npx -y @stashwiseapp/mcp search "..."    Search your library/wiki from the terminal.',
-      "  npx -y @stashwiseapp/mcp doctor          Check config, token, and backend reachability.",
-      "  npx -y @stashwiseapp/mcp --version       Print the installed version.",
+      `  ${STASHWISE_MCP_RUN_COMMAND}                 Start the stdio MCP server (default).`,
+      `  ${STASHWISE_MCP_AUTH_COMMAND}            Pair this machine with your Stashwise account.`,
+      `  ${STASHWISE_MCP_SEARCH_COMMAND} "..."    Search your library/wiki from the terminal.`,
+      `  ${STASHWISE_MCP_DOCTOR_COMMAND}          Check config, token, and backend reachability.`,
+      `  ${STASHWISE_MCP_RUN_COMMAND} --version       Print the installed version.`,
       "",
       "Search flags:",
       "  --scope library|wiki|all   Limit the search surface (default: all).",

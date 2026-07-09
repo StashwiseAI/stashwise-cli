@@ -1,13 +1,14 @@
 // Direct, human-runnable search — use Stashwise from the terminal without
 // wiring up an agent:
 //
-//   npx -y @stashwiseapp/mcp search "what did I save about HNSW"
-//   npx -y @stashwiseapp/mcp search rust borrow checker --scope wiki --k 5
+//   npx -y --package @stashwiseapp/mcp@latest mcp search "what did I save about HNSW"
+//   npx -y --package @stashwiseapp/mcp@latest mcp search rust borrow checker --scope wiki --k 5
 //
 // Hits the same backend endpoint as the MCP `search_stashwise` tool, so it
 // doubles as a quick way to verify the connection works.
 
 import { ApiError, StashwiseApi, type AgentSearchResponse } from "./api.js";
+import { STASHWISE_MCP_SEARCH_COMMAND } from "./commands.js";
 import { loadConfig } from "./config.js";
 import { getStoredToken } from "./keychain.js";
 import { notAuthenticatedHint } from "./messages.js";
@@ -23,7 +24,7 @@ interface ParsedSearchArgs {
 }
 
 const USAGE =
-  '\nUsage: npx -y @stashwiseapp/mcp search "<query>" [--scope library|wiki|all] [--k 1-25]\n';
+  `\nUsage: ${STASHWISE_MCP_SEARCH_COMMAND} "<query>" [--scope library|wiki|all] [--k 1-25]\n`;
 
 export function parseSearchArgs(args: string[]): ParsedSearchArgs {
   const queryParts: string[] = [];

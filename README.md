@@ -19,7 +19,7 @@ No account yet? [Create one at stashwise.co](https://stashwise.co/signup) and sa
 - **Node.js ≥ 18** (`node --version`). `npx` ships with npm.
 - A **Stashwise account** with some saved content.
 
-That's it — there's nothing to globally install. Every command below runs the package on demand via `npx -y @stashwiseapp/mcp`.
+That's it — there's nothing to globally install. Every command below runs the package on demand via `npx -y --package @stashwiseapp/mcp@latest mcp`.
 
 ---
 
@@ -34,10 +34,10 @@ Pick your host — each is a one-liner (or one click):
 **Claude Code**
 
 ```bash
-claude mcp add -s user stashwise -- npx -y @stashwiseapp/mcp
+claude mcp add -s user stashwise -- npx -y --package @stashwiseapp/mcp@latest mcp
 ```
 
-**Cursor** — [**▸ Add to Cursor**](cursor://anysphere.cursor-deeplink/mcp/install?name=stashwise&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBzdGFzaHdpc2VhcHAvbWNwIl19)
+**Cursor** — [**▸ Add to Cursor**](cursor://anysphere.cursor-deeplink/mcp/install?name=stashwise&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi0tcGFja2FnZSIsIkBzdGFzaHdpc2VhcHAvbWNwQGxhdGVzdCIsIm1jcCJdfQ)
 
 …or add it manually to `~/.cursor/mcp.json`:
 
@@ -46,7 +46,7 @@ claude mcp add -s user stashwise -- npx -y @stashwiseapp/mcp
   "mcpServers": {
     "stashwise": {
       "command": "npx",
-      "args": ["-y", "@stashwiseapp/mcp"]
+      "args": ["-y", "--package", "@stashwiseapp/mcp@latest", "mcp"]
     }
   }
 }
@@ -55,7 +55,7 @@ claude mcp add -s user stashwise -- npx -y @stashwiseapp/mcp
 **Codex CLI**
 
 ```bash
-codex mcp add stashwise -- npx -y @stashwiseapp/mcp
+codex mcp add stashwise -- npx -y --package @stashwiseapp/mcp@latest mcp
 ```
 
 …or add it manually to `~/.codex/config.toml`:
@@ -63,7 +63,7 @@ codex mcp add stashwise -- npx -y @stashwiseapp/mcp
 ```toml
 [mcp_servers.stashwise]
 command = "npx"
-args = ["-y", "@stashwiseapp/mcp"]
+args = ["-y", "--package", "@stashwiseapp/mcp@latest", "mcp"]
 ```
 
 **Claude Desktop** — edit the config file (no CLI), then restart the app:
@@ -76,7 +76,7 @@ args = ["-y", "@stashwiseapp/mcp"]
   "mcpServers": {
     "stashwise": {
       "command": "npx",
-      "args": ["-y", "@stashwiseapp/mcp"]
+      "args": ["-y", "--package", "@stashwiseapp/mcp@latest", "mcp"]
     }
   }
 }
@@ -85,7 +85,7 @@ args = ["-y", "@stashwiseapp/mcp"]
 ### 2 · Authorize (run once)
 
 ```bash
-npx -y @stashwiseapp/mcp auth
+npx -y --package @stashwiseapp/mcp@latest mcp auth
 ```
 
 This opens the pairing page at **[stashwise.co/cli](https://stashwise.co/cli)** in your browser. Sign in, click **Authorize**, and a long-lived token is saved to your **OS keychain** (macOS Keychain / Windows Credential Vault / Linux libsecret). Your agent picks it up automatically on its next search.
@@ -99,7 +99,7 @@ This opens the pairing page at **[stashwise.co/cli](https://stashwise.co/cli)** 
 From the terminal — no agent required:
 
 ```bash
-npx -y @stashwiseapp/mcp search "what did I save about HNSW indexes"
+npx -y --package @stashwiseapp/mcp@latest mcp search "what did I save about HNSW indexes"
 ```
 
 ```
@@ -126,7 +126,7 @@ Or just ask your agent: *"Search my Stashwise for what I saved about HNSW indexe
 | `--k` | `1`–`25` | `8` | Max results to return. |
 
 ```bash
-npx -y @stashwiseapp/mcp search rust borrow checker --scope wiki --k 5
+npx -y --package @stashwiseapp/mcp@latest mcp search rust borrow checker --scope wiki --k 5
 ```
 
 ---
@@ -172,14 +172,14 @@ It maps to the backend endpoint `POST /api/v1/agent/search`.
 ## Diagnostics
 
 ```bash
-npx -y @stashwiseapp/mcp doctor
+npx -y --package @stashwiseapp/mcp@latest mcp doctor
 ```
 
 Prints your resolved config, whether the stored token is valid, and whether the backend is reachable. Run this first when something's off.
 
 ```bash
-npx -y @stashwiseapp/mcp --version   # print the installed version
-npx -y @stashwiseapp/mcp --help      # full usage
+npx -y --package @stashwiseapp/mcp@latest mcp --version   # print the installed version
+npx -y --package @stashwiseapp/mcp@latest mcp --help      # full usage
 ```
 
 ---
@@ -200,17 +200,17 @@ See and revoke every machine you've paired at **[stashwise.co/account/mcp](https
 Pointing at a local backend during development:
 
 ```bash
-STASHWISE_API_URL=http://127.0.0.1:8000/api/v1 npx -y @stashwiseapp/mcp search "test"
+STASHWISE_API_URL=http://127.0.0.1:8000/api/v1 npx -y --package @stashwiseapp/mcp@latest mcp search "test"
 ```
 
 ---
 
 ## Troubleshooting
 
-- **"Stashwise is not authenticated."** — Run `npx -y @stashwiseapp/mcp auth`. If a search worked before and suddenly returns this, your token may have been revoked at `stashwise.co/account/mcp` — just re-run `auth`.
+- **"Stashwise is not authenticated."** — Run `npx -y --package @stashwiseapp/mcp@latest mcp auth`. If a search worked before and suddenly returns this, your token may have been revoked at `stashwise.co/account/mcp` — just re-run `auth`.
 - **Agent doesn't see the tool** — Restart the host after editing its config (Claude Desktop especially). In Claude Code, run `/mcp` to confirm `stashwise` is connected.
 - **`OS keychain unavailable …` warning** — Expected on some headless/CI Linux boxes without libsecret. The token falls back to `~/.stashwise/credentials.json` (mode `0600`); everything still works.
-- **Still stuck?** — `npx -y @stashwiseapp/mcp doctor` reports config, token validity, and backend reachability.
+- **Still stuck?** — `npx -y --package @stashwiseapp/mcp@latest mcp doctor` reports config, token validity, and backend reachability.
 
 ---
 
