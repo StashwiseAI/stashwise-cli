@@ -80,17 +80,22 @@ const MIN_SNIPPET_CHARS = 40;
 //
 // The distribution shape separates the two cleanly where the raw scores do
 // not. Measured against six labeled probes on the live library
-// (scripts/calibrate-gating.mjs, 2026-07-20), top1 minus the mean of the
-// rest was:
+// (scripts/calibrate-gating.mjs, re-run 2026-07-21 after flow-app#159
+// stopped serving summaryless entities), top1 minus the mean of the rest:
 //
-//   silent wanted   0.009 (gibberish)  0.013 (unrelated)  0.036 ("structure
+//   silent wanted   0.031 (unrelated)  0.042 (gibberish)  0.042 ("structure
 //                   skills for an AI agent" — the false positive that
-//                   prompted this work: five near-tied results, no signal)
+//                   prompted this work: six near-tied results, no signal)
 //   inject wanted   0.109 (reddit)  0.185 (semrush)  0.189 (deepseek)
 //
-// 0.07 sits at the midpoint of that gap (0.036 → 0.109), leaving comparable
-// margin on both sides. Re-run the calibration script after any library
-// growth that might shift the distribution.
+// 0.07 sits inside that gap with 0.028 of margin below and 0.039 above. The
+// exact midpoint is 0.0755, so the gate leans very slightly toward
+// injecting; left as is because six probes do not justify tuning to three
+// decimal places, but tighten it if the gap ever narrows further.
+//
+// Re-run the calibration script after library growth, and after any backend
+// change to what search returns — dropping stubs server side moved the two
+// weakest silent probes up by 0.03 on its own.
 const PROMINENCE_MIN = 0.07;
 
 // Absolute sanity guard beneath the shape test. Prominence alone could fire
