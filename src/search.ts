@@ -8,7 +8,7 @@
 // doubles as a quick way to verify the connection works.
 
 import { ApiError, StashwiseApi, type AgentSearchResponse } from "./api.js";
-import { STASHWISE_MCP_SEARCH_COMMAND } from "./commands.js";
+import { STASHWISE_SEARCH_COMMAND } from "./commands.js";
 import { loadConfig } from "./config.js";
 import { getStoredToken } from "./keychain.js";
 import { notAuthenticatedHint } from "./messages.js";
@@ -24,7 +24,7 @@ interface ParsedSearchArgs {
 }
 
 const USAGE =
-  `\nUsage: ${STASHWISE_MCP_SEARCH_COMMAND} "<query>" [--scope library|wiki|all] [--k 1-25]\n`;
+  `\nUsage: ${STASHWISE_SEARCH_COMMAND} "<query>" [--scope library|wiki|all] [--k 1-25]\n`;
 
 export function parseSearchArgs(args: string[]): ParsedSearchArgs {
   const queryParts: string[] = [];

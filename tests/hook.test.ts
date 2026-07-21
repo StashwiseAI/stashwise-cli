@@ -399,16 +399,72 @@ describe("parseHookArgs", () => {
   });
 });
 
+// The binary was `mcp` through 0.3.0 and is `stashwise` from 0.4.0. Every
+// machine that installed the hook before the rename carries a pin naming the
+// old binary, so recognition has to span both names — see the migration tests
+// below for what breaks otherwise.
+const LEGACY_PIN = "npx -y --package @stashwiseapp/mcp@0.3.0 mcp hook";
+
 describe("isStashwiseHookCommand", () => {
   it("matches any pinned version of the hook command", () => {
-    expect(isStashwiseHookCommand(hookCommand("0.2.0"))).toBe(true);
+    expect(isStashwiseHookCommand(hookCommand("0.4.0"))).toBe(true);
     expect(isStashwiseHookCommand(hookCommand("9.9.9"))).toBe(true);
+  });
+
+  it("still matches pins written with the pre 0.4.0 binary name", () => {
+    expect(isStashwiseHookCommand(LEGACY_PIN)).toBe(true);
+    expect(
+      isStashwiseHookCommand("npx -y --package @stashwiseapp/mcp@0.2.0 mcp hook"),
+    ).toBe(true);
   });
 
   it("does not match the MCP server or other commands", () => {
     expect(isStashwiseHookCommand("npx -y --package @stashwiseapp/mcp@0.2.0 mcp")).toBe(false);
+    expect(
+      isStashwiseHookCommand("npx -y --package @stashwiseapp/mcp@0.4.0 stashwise"),
+    ).toBe(false);
     expect(isStashwiseHookCommand("npx some-other-package hook")).toBe(false);
     expect(isStashwiseHookCommand(undefined)).toBe(false);
+  });
+});
+
+describe("upgrading across the binary rename", () => {
+  it("migrates a legacy pin in place instead of adding a second hook", () => {
+    // The failure this prevents: an unrecognized old pin means installHookEntry
+    // appends beside it, so every prompt searches the library twice and the
+    // stale entry keeps running whatever version it named.
+    const settings: ClaudeSettings = {
+      hooks: {
+        UserPromptSubmit: [{ hooks: [{ type: "command", command: LEGACY_PIN, timeout: 10 }] }],
+      },
+    };
+    const { settings: out, changed } = installHookEntry(settings, hookCommand("0.4.0"));
+
+    expect(changed).toBe(true);
+    const entries = out.hooks?.UserPromptSubmit ?? [];
+    expect(entries).toHaveLength(1);
+    expect(entries[0].hooks).toHaveLength(1);
+    expect(entries[0].hooks?.[0].command).toBe(hookCommand("0.4.0"));
+  });
+
+  it("uninstall removes a legacy pin", () => {
+    // Otherwise `hook uninstall` reports success having removed nothing, and
+    // the user keeps being searched on every prompt with no way to tell.
+    const settings: ClaudeSettings = {
+      hooks: {
+        UserPromptSubmit: [{ hooks: [{ type: "command", command: LEGACY_PIN }] }],
+      },
+    };
+    const { settings: out, removed } = removeHookEntry(settings);
+
+    expect(removed).toBe(true);
+    expect(out.hooks).toBeUndefined();
+  });
+
+  it("writes the new binary name into the pin", () => {
+    expect(hookCommand("0.4.0")).toBe(
+      "npx -y --package @stashwiseapp/mcp@0.4.0 stashwise hook",
+    );
   });
 });
 
