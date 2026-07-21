@@ -32,6 +32,7 @@ You ask an ordinary question. You do not mention Stashwise, and you do not remem
   its current state and see what else exists.
 
   ⎿  search_stashwise("open source SEO tool alternative")
+  ⎿  get_stashwise_context(kind="content", result_id="...")
   ⎿  Web Search("OpenSEO github bensenescu self-hosted")
 
   You saved OpenSEO in July: an open source, self hosted SEO tool
@@ -40,11 +41,12 @@ You ask an ordinary question. You do not mention Stashwise, and you do not remem
   → x.com/bensenescu/status/2078737738493301060
 ```
 
-Three things happened there, and only the first is automatic:
+Four things happened there, and only the first is automatic:
 
 1. **The hook noticed.** Every prompt you submit is checked against your library. This one matched a save, so you got the one line notice naming it.
 2. **The agent disagreed with the match.** It got `Ahrefs`, judged that the commercial tool was not what you were asking for, and searched your library again with a better query of its own.
-3. **It found what the first pass missed** and answered from your own saved material, with the source link.
+3. **It hydrated the result.** Search snippets identify candidates; the context call returned the saved item's full body, takeaways, notes, links, and wiki connections before the agent used it as evidence.
+4. **It answered from the full material**, with the source link, and used current web research only as a supplement.
 
 That second step is the point. The automatic check only sees your raw prompt, so it guesses before anyone has worked out what you are really asking. The agent can then go back with a sharper query.
 
@@ -62,7 +64,7 @@ https://stashwise-api.fly.dev/mcp/
 
 The hosted connection uses OAuth. Installing the Codex plugin—or adding the URL as a remote MCP connector in Cursor or Claude—opens Stashwise in the browser for approval. It does not require Node, `npx`, an API token, or OS-keychain setup. See [`integrations/`](./integrations/) for the client-specific assets.
 
-The Codex plugin also teaches Codex when to consult saved research, how to refine an incomplete match, and when writes are appropriate. It can search and read the library/wiki, save URLs and research notes, and organize item metadata. Deletion is intentionally unavailable.
+The Codex plugin also teaches Codex when to consult saved research, how to refine an incomplete match, and when writes are appropriate. Search stays lightweight, then `get_stashwise_context` hydrates each result the answer actually uses: library results include the full item and its wiki links; wiki results include the synthesized page, linked source items and takeaways, claims, contradictions, and related entities. It can also save URLs and research notes and organize item metadata. Deletion is intentionally unavailable.
 
 On local Codex surfaces, the plugin bundles an ambient `UserPromptSubmit` hook that reminds Codex to check Stashwise when saved research could materially improve an answer. The hook never reads credentials, sends the prompt over the network, or performs writes; searches still go through the OAuth-protected MCP tools. After installing or updating the plugin, open `/hooks`, review and trust the Stashwise hook, then start a new task. If the hook is disabled or untrusted, explicit Stashwise requests still work through the plugin skill and MCP server. Codex Cloud does not run the local lifecycle hook, so it uses that skill-based behavior instead.
 
@@ -144,7 +146,7 @@ No Stashwise account yet? [Create one](https://stashwise.co/signup) and save a f
 
 ## Two ways your library reaches the agent
 
-**Pull** is the `search_stashwise` tool. The agent calls it when it decides your library is relevant, or when you ask directly. Works in every MCP host.
+**Pull** starts with `search_stashwise`. The agent calls it when it decides your library is relevant, or when you ask directly, then calls `get_stashwise_context` for the result or results it will rely on. This two-step retrieval keeps discovery fast without forcing answers to rely on truncated summaries. It works in every MCP host.
 
 **Push** is host-specific. Claude Code's CLI hook searches each eligible prompt before the agent sees it and surfaces strong matches without anyone asking. The local Codex plugin hook injects relevance guidance before the turn, then Codex uses its existing OAuth MCP connection when a search is warranted. Codex Cloud and hosts without lifecycle hooks rely on the plugin skill or their own agent instructions.
 
