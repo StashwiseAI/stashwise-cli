@@ -52,6 +52,20 @@ That second step is the point. The automatic check only sees your raw prompt, so
 
 ## Install
 
+### Hosted integration (recommended)
+
+Codex, Cursor, and Claude can connect directly to the hosted Stashwise MCP endpoint:
+
+```text
+https://stashwise-api.fly.dev/mcp
+```
+
+The hosted connection uses OAuth. Installing the Codex plugin—or adding the URL as a remote MCP connector in Cursor or Claude—opens Stashwise in the browser for approval. It does not require Node, `npx`, an API token, or OS-keychain setup. See [`integrations/`](./integrations/) for the client-specific assets.
+
+The Codex plugin also teaches Codex when to consult saved research, how to refine an incomplete match, and when writes are appropriate. It can search and read the library/wiki, save URLs and research notes, and organize item metadata. Deletion is intentionally unavailable.
+
+### Local CLI and Claude Code hook
+
 ```bash
 npm i -g @stashwiseapp/mcp
 stashwise auth
