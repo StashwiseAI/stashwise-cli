@@ -23,18 +23,18 @@ quiet, which is its correct behavior for "no matches".
   currently in settings, and flags a stale pin whose version no longer matches
   what it reports. This check found the broken state on its first run.
 
-### Hardening: the pinned command is isolated from the surrounding project
+### The pinned command is isolated from the surrounding project
 
-`npm exec` resolves against the current project before its own cache, and the
-hook runs with cwd set to wherever the agent happens to be. The command now
-passes `--prefix ~/.stashwise` so resolution does not depend on the contents of
-that directory.
+`npm exec --package X@V` fails when the current directory *is* X at version V.
+npm decides the requested package is the local project, looks for the bin in
+`./node_modules/.bin` (where a package's own bin is never linked), and falls
+through to PATH. The pinned command now passes `--prefix ~/.stashwise` so
+resolution does not depend on where it runs.
 
-To be straight about this one: it is defensive, not a fix for a reproduced bug.
-The intermittent failures above correlated with cwd in early testing, but that
-did not hold up under a cold cache, and the true cause was never pinned down.
-`--prefix` removes one real variable at no cost. The detection above is what
-actually protects you.
+Only contributors hit this, since a user's cwd is never this package's source
+tree. It is documented at length in the source because it took three wrong
+diagnoses to find, and because the fix looks removable if you do not know what
+it is for.
 
 **Run `stashwise hook install` to repin.** Existing pins are recognized and
 rewritten in place.

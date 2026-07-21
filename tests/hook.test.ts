@@ -469,14 +469,14 @@ describe("upgrading across the binary rename", () => {
   });
 });
 
-describe("cwd independence", () => {
-  // The bug this guards: `npm exec` resolves against the current project
-  // first. The hook runs with cwd set to whatever directory the agent is in,
-  // so inside any Node project npm found a local node_modules/.bin, did not
-  // find `stashwise` there, and fell through to PATH — `command not found` on
-  // every prompt, exiting 0, indistinguishable from "no matches found".
-  // Measured: without --prefix it failed every time from such a cwd; with it,
-  // every time it succeeded.
+describe("project isolation", () => {
+  // `npm exec --package X@V` fails when cwd *is* X at version V: npm treats
+  // the local project as the requested package, does not find its bin in
+  // ./node_modules/.bin (a package's own bin is never linked there), and falls
+  // through to PATH. Verified against the published 0.4.1 — see the table on
+  // hookCommand. Only contributors hit it, but `hook install` probes the
+  // command it writes, so without the prefix that probe fails for anyone
+  // running from a checkout.
   it("pins through a prefix so npm ignores the surrounding project", () => {
     const cmd = hookCommand("0.4.0");
     expect(cmd).toMatch(/--prefix \S+/);

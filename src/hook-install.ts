@@ -50,17 +50,32 @@ export function npxPrefixDir(): string {
  * npx resolves from its cache on every prompt instead of hitting the registry;
  * a later `hook install` from a newer version replaces the pin in place.
  *
- * `--prefix` points npm at a directory we control instead of letting it
- * resolve against whatever project the agent is currently in. `npm exec`
- * consults the surrounding project before its own cache, and the hook's cwd is
- * arbitrary, so this removes a variable.
+ * DO NOT REMOVE `--prefix`. It is load bearing, and the reason is easy to
+ * mistake for superstition.
  *
- * Honest scope: this is hardening, not a fix for a reproduced bug. During the
- * 0.4.0 release the pinned command failed to resolve intermittently for about
- * an hour; the failures appeared to correlate with cwd, but that did not hold
- * up under a cold cache and the real cause was never established. What does
- * protect against a repeat is the probe in runHookInstall and the matching
- * doctor check, which turn a silent dead hook into a loud one. */
+ * `npm exec --package X@V` fails when the current directory *is* X at version
+ * V. npm decides the requested package is the local project, looks for the bin
+ * in ./node_modules/.bin — where a package's own bin is never linked — and
+ * falls through to PATH, yielding `command not found`. `--prefix` points npm at
+ * a directory we own, so resolution stops depending on where the command runs.
+ *
+ * Reproduced against the published 0.4.1:
+ *
+ *   cwd                          local package.json          @0.4.1
+ *   package source dir           @stashwiseapp/mcp@0.4.1     fails
+ *   package source dir           @stashwiseapp/mcp@0.4.0     works
+ *   home / unrelated project     none / different            works
+ *
+ * Only the exact name+version match fails, which is why it reads as random
+ * until you line those columns up. It cost three wrong diagnoses during the
+ * 0.4.0 release: registry propagation, then "dead in any Node project", then
+ * an overcorrection to "hardening with unproven benefit". All three were
+ * wrong, and this table is what settled it.
+ *
+ * In practice only contributors hit this, since a user's cwd is never this
+ * package's source tree. It still matters here because `hook install` probes
+ * the command it writes, and without `--prefix` that probe fails for anyone
+ * running it from a checkout. */
 export function hookCommand(version: string = VERSION): string {
   return `npx -y --prefix ${npxPrefixDir()} --package ${PACKAGE_NAME}@${version} stashwise hook`;
 }
