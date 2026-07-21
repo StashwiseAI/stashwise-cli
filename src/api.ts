@@ -98,11 +98,13 @@ export class StashwiseApi {
     query: string,
     k: number,
     scope: "library" | "wiki" | "all",
+    signal?: AbortSignal,
   ): Promise<AgentSearchResponse> {
     return this.request<AgentSearchResponse>("/agent/search", {
       method: "POST",
       token,
       body: JSON.stringify({ query, k, scope }),
+      signal,
     });
   }
 
