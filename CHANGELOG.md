@@ -2,6 +2,45 @@
 
 All notable changes to `@stashwiseapp/mcp`.
 
+## 0.4.1
+
+### `hook install` and `doctor` now prove the pinned command actually runs
+
+Writing a pin is not the same as writing one that works, and the difference was
+invisible. The hook exits 0 on failure by design, so it can never block a
+prompt; the cost is that a hook which cannot start looks exactly like a hook
+that found nothing.
+
+That is not hypothetical. During the 0.4.0 release the pinned command returned
+`command not found` on and off for roughly an hour, while the same package
+resolved fine through other specs. Nothing surfaced it. The hook simply went
+quiet, which is its correct behavior for "no matches".
+
+- `hook install` now executes the command it just wrote and fails loudly if it
+  does not resolve, rather than reporting success and leaving you to discover
+  the silence later.
+- `doctor` gained a **Pinned hook command runs** check against whatever is
+  currently in settings, and flags a stale pin whose version no longer matches
+  what it reports. This check found the broken state on its first run.
+
+### Hardening: the pinned command is isolated from the surrounding project
+
+`npm exec` resolves against the current project before its own cache, and the
+hook runs with cwd set to wherever the agent happens to be. The command now
+passes `--prefix ~/.stashwise` so resolution does not depend on the contents of
+that directory.
+
+To be straight about this one: it is defensive, not a fix for a reproduced bug.
+The intermittent failures above correlated with cwd in early testing, but that
+did not hold up under a cold cache, and the true cause was never pinned down.
+`--prefix` removes one real variable at no cost. The detection above is what
+actually protects you.
+
+**Run `stashwise hook install` to repin.** Existing pins are recognized and
+rewritten in place.
+
+---
+
 ## 0.4.0
 
 ### Breaking: the binary is now `stashwise`

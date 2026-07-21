@@ -5,7 +5,12 @@
 import { ApiError, StashwiseApi } from "./api.js";
 import { STASHWISE_AUTH_COMMAND, STASHWISE_HOOK_COMMAND } from "./commands.js";
 import { loadConfig } from "./config.js";
-import { hookInstalledInSettings } from "./hook-install.js";
+import {
+  installedHookCommand,
+  pinnedVersion,
+  probeHookCommand,
+  versionProbeFor,
+} from "./hook-install.js";
 import { getStoredToken, keychainBackend } from "./keychain.js";
 
 interface CheckResult {
@@ -87,13 +92,48 @@ export async function runDoctor(): Promise<number> {
 
   // Informational: an uninstalled hook is a valid setup, so it never fails
   // doctor; the detail just points at the install command.
+  const pinned = installedHookCommand();
   checks.push({
     label: "Claude Code prompt hook",
     ok: true,
-    detail: hookInstalledInSettings()
+    detail: pinned
       ? "installed in ~/.claude/settings.json"
       : `not installed. Run \`${STASHWISE_HOOK_COMMAND} install\` for proactive suggestions`,
   });
+
+  // The check that matters: does the pinned command actually run?
+  //
+  // Everything above can pass while the hook is completely dead. The pin names
+  // an exact version, and resolving it has failed twice in practice: once from
+  // a corrupt npx cache entry, once during the registry propagation window
+  // right after a publish. Both produced `command not found`, and because the
+  // hook is built to fail silently so it can never block a prompt, the result
+  // was indistinguishable from "no matches found". Nothing else detects this.
+  if (pinned) {
+    const probe = versionProbeFor(pinned);
+    const pin = pinnedVersion(pinned);
+    const outcome = await probeHookCommand(probe);
+
+    if (!outcome.ok) {
+      checks.push({
+        label: "Pinned hook command runs",
+        ok: false,
+        detail: `${outcome.detail}. The hook is installed but cannot start, which looks exactly like "no matches". Run \`${STASHWISE_HOOK_COMMAND} install\` to repin.`,
+      });
+    } else if (pin && outcome.version && pin !== outcome.version) {
+      checks.push({
+        label: "Pinned hook command runs",
+        ok: false,
+        detail: `pin says ${pin} but it reported ${outcome.version}. Run \`${STASHWISE_HOOK_COMMAND} install\` to repin.`,
+      });
+    } else {
+      checks.push({
+        label: "Pinned hook command runs",
+        ok: true,
+        detail: `${outcome.version ?? "ok"} in ${outcome.elapsedMs}ms`,
+      });
+    }
+  }
 
   const allOk = checks.every((c) => c.ok);
   process.stdout.write(
