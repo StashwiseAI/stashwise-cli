@@ -5,6 +5,8 @@ import {
   filterSuggestions,
   formatSuggestions,
   formatUserNotice,
+  gateOpens,
+  measureShape,
   parseHookArgs,
   parseHookPayload,
   requiredScore,
@@ -115,13 +117,14 @@ describe("filterSuggestions", () => {
   });
 
   it("excludes ids already suggested this session", () => {
-    const results = [item({ id: "a" }), item({ id: "b" })];
+    const results = [item({ id: "a", score: 0.62 }), item({ id: "b", score: 0.5 })];
     const kept = filterSuggestions(results, 0.35, new Set(["a"]));
     expect(kept.map((r) => r.id)).toEqual(["b"]);
   });
 
   it("caps at three suggestions", () => {
-    const results = ["a", "b", "c", "d", "e"].map((id) => item({ id }));
+    const scores = [0.7, 0.62, 0.58, 0.55, 0.52];
+    const results = scores.map((score, i) => item({ id: `id-${i}`, score }));
     expect(filterSuggestions(results, 0.35, new Set())).toHaveLength(3);
   });
 
@@ -142,13 +145,15 @@ describe("filterSuggestions", () => {
   it("holds wiki entities to a higher bar than saved content", () => {
     // 0.57 is the live score of the generic "TypeScript" entity against
     // "fix this typescript type error": above the content floor, below the
-    // entity bar.
+    // entity bar. The leader gives the pack a shape so the gate opens and
+    // the per kind floor is what decides between the two mid scorers.
     const results = [
+      item({ id: "content-lead", kind: "content", score: 0.7 }),
       item({ id: "entity-mid", kind: "entity", score: 0.57, source_url: null }),
       item({ id: "content-mid", kind: "content", score: 0.57 }),
     ];
     const kept = filterSuggestions(results, 0.45, new Set());
-    expect(kept.map((r) => r.id)).toEqual(["content-mid"]);
+    expect(kept.map((r) => r.id)).toEqual(["content-lead", "content-mid"]);
   });
 
   it("still admits a strongly matching entity", () => {
@@ -157,6 +162,85 @@ describe("filterSuggestions", () => {
       item({ id: "entity-strong", kind: "entity", score: 0.68, source_url: null }),
     ];
     expect(filterSuggestions(results, 0.45, new Set())).toHaveLength(1);
+  });
+
+  it("stays silent on a flat pack even when every score clears the floor", () => {
+    // The regression this gating exists for: "how should I structure skills
+    // for an AI agent" returned five near tied results, two of them above
+    // the content floor, none of which informed the answer.
+    const results = [
+      item({ id: "a", kind: "content", score: 0.581 }),
+      item({ id: "b", kind: "content", score: 0.555 }),
+      item({ id: "c", kind: "entity", score: 0.553, source_url: null }),
+      item({ id: "d", kind: "entity", score: 0.539, source_url: null }),
+      item({ id: "e", kind: "entity", score: 0.534, source_url: null }),
+    ];
+    expect(filterSuggestions(results, 0.45, new Set())).toEqual([]);
+  });
+
+  it("stays silent when a strong leader exists but only as a bare stub", () => {
+    // "Basic AI Agents" scored 0.712 with an empty summary. It must neither
+    // fill a slot nor lend its prominence to the flat pack beneath it.
+    const results = [
+      item({ id: "stub", kind: "entity", score: 0.712, snippet: "", source_url: null }),
+      item({ id: "a", kind: "content", score: 0.581 }),
+      item({ id: "b", kind: "content", score: 0.555 }),
+      item({ id: "c", kind: "entity", score: 0.553, source_url: null }),
+      item({ id: "d", kind: "entity", score: 0.539, source_url: null }),
+    ];
+    expect(filterSuggestions(results, 0.45, new Set())).toEqual([]);
+  });
+});
+
+describe("measureShape", () => {
+  it("ignores stubs when picking the leader", () => {
+    const shape = measureShape([
+      item({ id: "stub", score: 0.9, snippet: "" }),
+      item({ id: "real", score: 0.6 }),
+      item({ id: "tail", score: 0.5 }),
+    ]);
+    expect(shape.usable.map((r) => r.id)).toEqual(["real", "tail"]);
+    expect(shape.top1).toBeCloseTo(0.6);
+    expect(shape.prominence).toBeCloseTo(0.1);
+  });
+
+  it("gives a lone usable result its own score as prominence", () => {
+    const shape = measureShape([item({ score: 0.55 })]);
+    expect(shape.prominence).toBeCloseTo(0.55);
+  });
+
+  it("reports an empty shape when nothing is usable", () => {
+    const shape = measureShape([item({ snippet: "" }), item({ snippet: "tiny" })]);
+    expect(shape.usable).toEqual([]);
+    expect(shape.top1).toBe(0);
+  });
+});
+
+describe("gateOpens", () => {
+  // Frozen from scripts/calibrate-gating.mjs against the live library on
+  // 2026-07-20. Each row is the usable score list for one labeled probe.
+  // Re-run the script and update these if the library shifts enough to
+  // move the boundary.
+  const PROBES: Array<{ name: string; open: boolean; scores: number[] }> = [
+    { name: "structure skills (false positive)", open: false, scores: [0.581, 0.555, 0.553, 0.539, 0.534] },
+    { name: "semrush alternatives", open: true, scores: [0.638, 0.515, 0.469, 0.458, 0.418, 0.407] },
+    { name: "deepseek locally", open: true, scores: [0.606, 0.499, 0.416, 0.405, 0.391, 0.37] },
+    { name: "first users from reddit", open: true, scores: [0.481, 0.445, 0.378, 0.357, 0.35, 0.33] },
+    { name: "gibberish", open: false, scores: [0.35, 0.344, 0.339] },
+    { name: "unrelated but coherent", open: false, scores: [0.212, 0.199] },
+  ];
+
+  for (const probe of PROBES) {
+    it(`${probe.open ? "opens" : "stays shut"} for ${probe.name}`, () => {
+      const results = probe.scores.map((score, i) => item({ id: `p-${i}`, score }));
+      expect(gateOpens(measureShape(results))).toBe(probe.open);
+    });
+  }
+
+  it("stays shut below the absolute top score guard", () => {
+    // One item standing clear of worse junk is still junk.
+    const results = [item({ id: "a", score: 0.4 }), item({ id: "b", score: 0.2 })];
+    expect(gateOpens(measureShape(results))).toBe(false);
   });
 });
 
@@ -187,6 +271,14 @@ describe("formatSuggestions", () => {
     // systemMessage, so this block must not claim the user cannot see it.
     expect(block).not.toMatch(/cannot see this block/);
     expect(block).not.toMatch(/REQUIRED:/);
+  });
+
+  it("invites a refined pull query when the pushed matches miss", () => {
+    // The push path only ever queries the raw prompt. Without this line the
+    // model never issues a second, better targeted search.
+    const block = formatSuggestions([item()]);
+    expect(block).toContain("search_stashwise");
+    expect(block).toMatch(/refined to their actual intent/);
   });
 });
 
