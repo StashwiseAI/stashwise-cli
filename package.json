@@ -1,7 +1,7 @@
 {
   "name": "@stashwiseapp/mcp",
-  "version": "0.2.2",
-  "description": "Stashwise MCP server — query your saved library and wiki from any AI agent (Claude Code, Codex, Cursor, Claude desktop).",
+  "version": "0.3.0",
+  "description": "Stashwise MCP server \u2014 query your saved library and wiki from any AI agent (Claude Code, Codex, Cursor, Claude desktop).",
   "type": "module",
   "bin": {
     "mcp": "./dist/index.js"
@@ -16,7 +16,8 @@
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "calibrate": "node scripts/calibrate-gating.mjs"
   },
   "engines": {
     "node": ">=18.0.0"

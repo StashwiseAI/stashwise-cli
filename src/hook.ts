@@ -34,6 +34,10 @@ export interface HookOptions {
 // Calibrated against the live library: gibberish prompts still surface a
 // degenerate item at 0.42, while genuinely related content clusters at 0.46
 // and above. 0.45 separates the two; below it the hook stays silent.
+//
+// This floor decides *which* results fill a slot. It cannot decide *whether*
+// any slot should open, because cosine similarity is not comparable across
+// queries — see PROMINENCE_MIN.
 const DEFAULT_MIN_SCORE = 0.45;
 const DEFAULT_K = 6;
 const DEFAULT_TIMEOUT_MS = 2500;
@@ -51,6 +55,12 @@ const SEEN_IDS_CAP = 200;
 // asking about Ahrefs alternatives matched the Ahrefs entity at 0.68) clear a
 // higher bar, so hold entities to minScore + this delta rather than trying to
 // infer whether a prompt is about an entity or merely mentions it.
+//
+// Loosening this to 0.08 was tried and rejected: it changed nothing on any of
+// the six calibration probes, while readmitting the generic "TypeScript"
+// entity above. Entities that lose out here because the prompt is narrow are
+// better recovered through the pull path (see formatSuggestions), which has
+// no floor at all, than by lowering a bar that is doing useful work.
 const ENTITY_SCORE_MARGIN = 0.15;
 
 // A result whose snippet is empty renders as a bare title, which tells the
@@ -58,6 +68,36 @@ const ENTITY_SCORE_MARGIN = 0.15;
 // "Parallel Execution Agents". Dropping them lets the real save behind the
 // same query (the Orca reel, with a summary and a link) take the slot.
 const MIN_SNIPPET_CHARS = 40;
+
+// --- Shape gating ---------------------------------------------------------
+// An absolute score floor alone cannot tell a real match from a vague one,
+// because cosine similarity measures how generic the *query* is as much as
+// how relevant the *result* is. A broad prompt lands near the centre of a
+// whole topic cluster and scores 0.5+ against a dozen mediocre items; a
+// narrow prompt lands in a sparse corner and scores 0.36 against the one item
+// that answers it. Any single floor therefore admits noise on broad prompts
+// while suppressing the best matches on narrow ones.
+//
+// The distribution shape separates the two cleanly where the raw scores do
+// not. Measured against six labeled probes on the live library
+// (scripts/calibrate-gating.mjs, 2026-07-20), top1 minus the mean of the
+// rest was:
+//
+//   silent wanted   0.009 (gibberish)  0.013 (unrelated)  0.036 ("structure
+//                   skills for an AI agent" — the false positive that
+//                   prompted this work: five near-tied results, no signal)
+//   inject wanted   0.109 (reddit)  0.185 (semrush)  0.189 (deepseek)
+//
+// 0.07 sits at the midpoint of that gap (0.036 → 0.109), leaving comparable
+// margin on both sides. Re-run the calibration script after any library
+// growth that might shift the distribution.
+const PROMINENCE_MIN = 0.07;
+
+// Absolute sanity guard beneath the shape test. Prominence alone could fire
+// on a degenerate distribution where one piece of junk happens to stand out
+// from worse junk; the best gibberish probe topped out at 0.365 and the
+// weakest true positive was 0.481, so 0.42 separates them with room to spare.
+const MIN_TOP_SCORE = 0.42;
 
 /** Parse the JSON payload Claude Code pipes to hook stdin. Null unless it is
  * a UserPromptSubmit event carrying a usable prompt. */
@@ -101,17 +141,65 @@ export function requiredScore(
   return kind === "entity" ? minScore + ENTITY_SCORE_MARGIN : minScore;
 }
 
+/** Does this result carry enough text to be worth showing at all? A bare
+ * title is not a suggestion. */
+function isUsable(r: AgentSearchResultItem): boolean {
+  return r.snippet.trim().length >= MIN_SNIPPET_CHARS;
+}
+
+export interface ResultShape {
+  /** Results with enough text to fill a slot, best first. */
+  usable: AgentSearchResultItem[];
+  /** Best usable score, 0 when nothing is usable. */
+  top1: number;
+  /** How far the leader stands out from the rest of the pack. */
+  prominence: number;
+}
+
+/** Describe the retrieval's shape, ignoring stubs.
+ *
+ * Deliberately measured before session dedupe: the question is whether the
+ * library holds a standout answer for this prompt, which does not change
+ * because an earlier prompt already surfaced it. Measuring after dedupe would
+ * let a mediocre runner up inherit the leader's position and read as
+ * prominent.
+ *
+ * A lone usable result has nothing to be compared against, so its prominence
+ * is its own score and MIN_TOP_SCORE alone decides its fate. */
+export function measureShape(results: AgentSearchResultItem[]): ResultShape {
+  const usable = results.filter(isUsable);
+  const top1 = usable[0]?.score ?? 0;
+  const rest = usable.slice(1);
+  const meanRest =
+    rest.length === 0
+      ? 0
+      : rest.reduce((sum, r) => sum + r.score, 0) / rest.length;
+  return { usable, top1, prominence: top1 - meanRest };
+}
+
+/** Should any suggestion be offered for this retrieval? Answers "is there
+ * signal here", separately from "which items are best", so that a flat pack
+ * of plausible looking results stays silent no matter how high it scores. */
+export function gateOpens(shape: ResultShape): boolean {
+  if (shape.usable.length === 0) return false;
+  if (shape.top1 < MIN_TOP_SCORE) return false;
+  return shape.prominence >= PROMINENCE_MIN;
+}
+
 /** Keep results that carry usable text, clear the relevance bar for their
  * kind, have not been suggested in this session, and fit the suggestion cap.
+ * Returns nothing at all when the retrieval shows no standout signal.
  * Score order is preserved from the backend (already sorted best first). */
 export function filterSuggestions(
   results: AgentSearchResultItem[],
   minScore: number,
   seenIds: ReadonlySet<string>,
 ): AgentSearchResultItem[] {
+  const shape = measureShape(results);
+  if (!gateOpens(shape)) return [];
+
   const out: AgentSearchResultItem[] = [];
-  for (const r of results) {
-    if (r.snippet.trim().length < MIN_SNIPPET_CHARS) continue;
+  for (const r of shape.usable) {
     if (r.score < requiredScore(r.kind, minScore)) continue;
     if (seenIds.has(r.id)) continue;
     out.push(r);
@@ -149,6 +237,16 @@ export function formatSuggestions(items: AgentSearchResultItem[]): string {
   const lines: string[] = [
     "<stashwise-suggestions>",
     "Saved items from the user's own Stashwise library that match this prompt. They have already been shown the titles, so citing one that informs your answer is useful; skip them silently if none apply.",
+    // The push path only ever sees the raw prompt, so its query is fixed
+    // before anyone has worked out what the prompt is really asking. Narrow
+    // topics land in sparse regions where the one item that answers them
+    // scores below any usable floor: "SKILL.md frontmatter progressive
+    // disclosure" surfaced the right tutorial at 0.36, under a raw prompt
+    // whose own mediocre matches all scored above 0.53. The pull path has no
+    // floor, so the fix is to invite a second query rather than to lower the
+    // first one's bar. Phrased as a conditional on an observable predicate,
+    // not a prohibition, so there is nothing to negotiate away.
+    "If none of these fit but the topic is one the user plausibly saved something about, call the `search_stashwise` tool with a query refined to their actual intent before answering.",
   ];
   items.forEach((item, i) => {
     const meta: string[] = [];
