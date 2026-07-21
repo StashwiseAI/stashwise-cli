@@ -43,6 +43,22 @@ const QUERY_CHAR_CAP = 2000;
 const SNIPPET_CHAR_CAP = 160;
 const SEEN_IDS_CAP = 200;
 
+// Wiki entities are derived abstractions with no source_url, so there is
+// nothing for the user to go open. They also match on incidental mentions: a
+// generic "TypeScript" entity page scored 0.57 against "fix this typescript
+// type error", where its encyclopedia style summary adds nothing the model
+// did not already know. Entities that genuinely answer a prompt (the user
+// asking about Ahrefs alternatives matched the Ahrefs entity at 0.68) clear a
+// higher bar, so hold entities to minScore + this delta rather than trying to
+// infer whether a prompt is about an entity or merely mentions it.
+const ENTITY_SCORE_MARGIN = 0.15;
+
+// A result whose snippet is empty renders as a bare title, which tells the
+// user nothing and burns a suggestion slot. Observed on stub entities such as
+// "Parallel Execution Agents". Dropping them lets the real save behind the
+// same query (the Orca reel, with a summary and a link) take the slot.
+const MIN_SNIPPET_CHARS = 40;
+
 /** Parse the JSON payload Claude Code pipes to hook stdin. Null unless it is
  * a UserPromptSubmit event carrying a usable prompt. */
 export function parseHookPayload(raw: string): HookPayload | null {
@@ -75,9 +91,19 @@ export function shouldQuery(prompt: string): boolean {
   return true;
 }
 
-/** Keep results that clear the relevance bar, have not been suggested in this
- * session, and fit the suggestion cap. Score order is preserved from the
- * backend (already sorted best first). */
+/** The score a result must reach to be worth a suggestion slot. Saved content
+ * uses the calibrated floor; wiki entities are held higher (see
+ * ENTITY_SCORE_MARGIN). */
+export function requiredScore(
+  kind: AgentSearchResultItem["kind"],
+  minScore: number,
+): number {
+  return kind === "entity" ? minScore + ENTITY_SCORE_MARGIN : minScore;
+}
+
+/** Keep results that carry usable text, clear the relevance bar for their
+ * kind, have not been suggested in this session, and fit the suggestion cap.
+ * Score order is preserved from the backend (already sorted best first). */
 export function filterSuggestions(
   results: AgentSearchResultItem[],
   minScore: number,
@@ -85,7 +111,8 @@ export function filterSuggestions(
 ): AgentSearchResultItem[] {
   const out: AgentSearchResultItem[] = [];
   for (const r of results) {
-    if (r.score < minScore) continue;
+    if (r.snippet.trim().length < MIN_SNIPPET_CHARS) continue;
+    if (r.score < requiredScore(r.kind, minScore)) continue;
     if (seenIds.has(r.id)) continue;
     out.push(r);
     if (out.length >= MAX_SUGGESTIONS) break;
@@ -106,11 +133,19 @@ function savedDate(savedAt: string | null): string | null {
 }
 
 /** Render the context block the harness injects. Kept compact: the block
- * rides along on every matching prompt, so every line must earn its tokens. */
+ * rides along on every matching prompt, so every line must earn its tokens.
+ *
+ * The instruction is a positive recipe, not a permission. The first version
+ * read "Mention them only if genuinely relevant", and a real session dropped
+ * three on-topic saves without a word because a competing skill dominated the
+ * answer: the user saw no evidence the hook had run at all. Soft guidance
+ * loses to a strong competing context, so state what the output must contain
+ * and give the silent case an explicit branch instead of leaving it implied. */
 export function formatSuggestions(items: AgentSearchResultItem[]): string {
   const lines: string[] = [
     "<stashwise-suggestions>",
-    "The user's Stashwise library contains saved items related to this prompt. Mention them only if genuinely relevant:",
+    "These are the user's OWN saved items, retrieved from their Stashwise library because they match this prompt. The user cannot see this block.",
+    "REQUIRED: if any item below informs your answer, cite it inline at the point you use it, naming the title and its link, and noting they saved it. If none apply, ignore this block entirely and never mention Stashwise.",
   ];
   items.forEach((item, i) => {
     const meta: string[] = [];
