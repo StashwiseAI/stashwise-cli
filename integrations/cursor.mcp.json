@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "stashwise": {
-      "url": "https://stashwise-api.fly.dev/mcp"
+      "url": "https://stashwise-api.fly.dev/mcp/"
     }
   }
 }
