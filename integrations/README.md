@@ -4,7 +4,11 @@ The hosted MCP endpoint is `https://stashwise-api.fly.dev/mcp/`. It uses OAuth a
 
 ## Codex
 
-Install the Stashwise Codex plugin from this repository's marketplace. The plugin contains the remote MCP definition and retrieval skill; Codex opens the Stashwise authorization screen during installation.
+Install the Stashwise Codex plugin from this repository's marketplace. The plugin contains the remote MCP definition, retrieval skill, and a local `UserPromptSubmit` hook; Codex opens the Stashwise authorization screen during installation.
+
+After installing or updating, open `/hooks` in Codex, review and trust the Stashwise hook, and then start a new task. The hook only injects relevance guidance; it does not transmit prompts or access credentials. Authenticated searches continue through the hosted MCP connection. If the hook is disabled or untrusted, explicit Stashwise requests still work through the skill and MCP tools.
+
+Codex Cloud does not run this local lifecycle hook. The plugin skill remains the fallback there and still teaches the agent when and how to search Stashwise.
 
 ## Cursor
 
