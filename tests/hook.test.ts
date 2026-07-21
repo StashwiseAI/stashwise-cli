@@ -218,16 +218,30 @@ describe("measureShape", () => {
 
 describe("gateOpens", () => {
   // Frozen from scripts/calibrate-gating.mjs against the live library on
-  // 2026-07-20. Each row is the usable score list for one labeled probe.
-  // Re-run the script and update these if the library shifts enough to
-  // move the boundary.
+  // 2026-07-21, after flow-app#159 stopped serving summaryless entities.
+  // Every probe now fills all six slots with readable results; previously
+  // stubs occupied one to four of them and were discarded client side.
+  //
+  // Removing the stubs moved the two weakest silent probes up, because the
+  // padding at the bottom of their distributions went away:
+  //
+  //   probe                    before   after
+  //   structure skills          0.036   0.042
+  //   gibberish                 0.009   0.042
+  //   unrelated but coherent    0.013   0.031
+  //   the three inject probes  unchanged (stubs never ranked in them)
+  //
+  // The decision boundary still separates cleanly, 0.042 against 0.109, and
+  // PROMINENCE_MIN of 0.07 sits inside it. The midpoint has drifted to
+  // 0.0755, so the gate is now marginally biased toward injecting; worth
+  // revisiting if a future calibration narrows the gap further.
   const PROBES: Array<{ name: string; open: boolean; scores: number[] }> = [
-    { name: "structure skills (false positive)", open: false, scores: [0.581, 0.555, 0.553, 0.539, 0.534] },
+    { name: "structure skills (false positive)", open: false, scores: [0.581, 0.555, 0.553, 0.539, 0.534, 0.515] },
     { name: "semrush alternatives", open: true, scores: [0.638, 0.515, 0.469, 0.458, 0.418, 0.407] },
     { name: "deepseek locally", open: true, scores: [0.606, 0.499, 0.416, 0.405, 0.391, 0.37] },
     { name: "first users from reddit", open: true, scores: [0.481, 0.445, 0.378, 0.357, 0.35, 0.33] },
-    { name: "gibberish", open: false, scores: [0.35, 0.344, 0.339] },
-    { name: "unrelated but coherent", open: false, scores: [0.212, 0.199] },
+    { name: "gibberish", open: false, scores: [0.35, 0.344, 0.339, 0.311, 0.284, 0.262] },
+    { name: "unrelated but coherent", open: false, scores: [0.212, 0.199, 0.191, 0.189, 0.179, 0.149] },
   ];
 
   for (const probe of PROBES) {
