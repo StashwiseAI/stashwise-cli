@@ -73,7 +73,7 @@ describe("Codex plugin installer", () => {
       env: {
         ...process.env,
         FAKE_CODEX_LOG: fakeCodex.logPath,
-        FAKE_MARKETPLACE_LIST: "stashwise  /tmp/stashwise",
+        FAKE_MARKETPLACE_LIST: "stashwise  /tmp/.tmp/marketplaces/stashwise",
         FAKE_PLUGIN_LIST:
           "stashwise@stashwise  installed, enabled  0.1.1  /tmp/stashwise",
         PATH: `${fakeCodex.binDirectory}${delimiter}${process.env.PATH ?? ""}`,
@@ -158,6 +158,29 @@ describe("Codex plugin installer", () => {
       "plugin marketplace list",
       "plugin list",
       "plugin remove stashwise@stashwise --json",
+      "plugin add stashwise@stashwise --json",
+    ]);
+  });
+
+  it("replaces a renamed legacy local marketplace with the public Git marketplace", () => {
+    const fakeCodex = createFakeCodex();
+    const result = spawnSync("/bin/sh", [installerPath], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        FAKE_CODEX_LOG: fakeCodex.logPath,
+        FAKE_MARKETPLACE_LIST: "stashwise  /tmp/stashwise-cli",
+        FAKE_PLUGIN_LIST: "PLUGIN STATUS VERSION PATH",
+        PATH: `${fakeCodex.binDirectory}${delimiter}${process.env.PATH ?? ""}`,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(readFileSync(fakeCodex.logPath, "utf8").trim().split("\n")).toEqual([
+      "plugin marketplace list",
+      "plugin marketplace remove personal --json",
+      "plugin marketplace add StashwiseAI/stashwise-cli --ref main",
+      "plugin list",
       "plugin add stashwise@stashwise --json",
     ]);
   });

@@ -17,16 +17,38 @@ if ! command -v codex >/dev/null 2>&1; then
   exit 1
 fi
 
-if codex plugin marketplace list | grep -Eq '^stashwise[[:space:]]'; then
-  if [ "$marketplace_is_local" = false ]; then
-    codex plugin marketplace upgrade "$marketplace_name" >/dev/null
-  fi
-else
+add_marketplace() {
   if [ "$marketplace_is_local" = true ]; then
     codex plugin marketplace add "$marketplace_source" >/dev/null
   else
     codex plugin marketplace add "$marketplace_source" --ref "$marketplace_ref" >/dev/null
   fi
+}
+
+marketplace_list=$(codex plugin marketplace list)
+marketplace_root=$(printf '%s\n' "$marketplace_list" | awk '$1 == "stashwise" { print $2; exit }')
+
+if [ -n "$marketplace_root" ]; then
+  if [ "$marketplace_is_local" = false ]; then
+    case "$marketplace_root" in
+      */.tmp/marketplaces/stashwise)
+        codex plugin marketplace upgrade "$marketplace_name" >/dev/null
+        ;;
+      *)
+        if codex plugin marketplace remove personal --json >/dev/null 2>&1; then
+          :
+        elif codex plugin marketplace remove "$marketplace_name" --json >/dev/null 2>&1; then
+          :
+        else
+          printf '%s\n' "Could not replace the legacy local Stashwise marketplace." >&2
+          exit 1
+        fi
+        add_marketplace
+        ;;
+    esac
+  fi
+else
+  add_marketplace
 fi
 
 installed_plugins=$(codex plugin list)
