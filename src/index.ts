@@ -1,23 +1,25 @@
 #!/usr/bin/env node
-// Stashwise MCP entrypoint.
+// Stashwise entrypoint.
 //
-//   npx -y --package @stashwiseapp/mcp@latest mcp              → stdio MCP server (default)
-//   npx -y --package @stashwiseapp/mcp@latest mcp auth         → one-time device-code login
-//   npx -y --package @stashwiseapp/mcp@latest mcp search "..." → search from the terminal
-//   npx -y --package @stashwiseapp/mcp@latest mcp doctor       → config + token + backend health
-//   npx -y --package @stashwiseapp/mcp@latest mcp hook install → register the Claude Code prompt hook
+//   stashwise              → stdio MCP server (default; what agent hosts spawn)
+//   stashwise auth         → one-time device-code login
+//   stashwise search "..." → search from the terminal
+//   stashwise doctor       → config + token + backend health
+//   stashwise hook install → register the Claude Code prompt hook
 //
 // Codex's review confirmed: a separate CLI binary buys nothing — single
 // binary with subcommand modes is the production pattern (Stripe, Linear,
 // Atlassian, every other MCP server in 2026 ships this way).
+//
+// The binary was `mcp` through 0.3.0. It is `stashwise` from 0.4.0: `mcp` is
+// far too generic to occupy on a stranger's PATH, and that alone was why the
+// docs could never recommend a global install and had to repeat a 48
+// character npx incantation on every line.
 
 import { runAuth } from "./auth.js";
 import {
-  STASHWISE_MCP_AUTH_COMMAND,
-  STASHWISE_MCP_DOCTOR_COMMAND,
-  STASHWISE_MCP_HOOK_COMMAND,
+  STASHWISE_HOOK_COMMAND,
   STASHWISE_MCP_RUN_COMMAND,
-  STASHWISE_MCP_SEARCH_COMMAND,
 } from "./commands.js";
 import { runDoctor } from "./doctor.js";
 import { runHook } from "./hook.js";
@@ -54,7 +56,7 @@ async function runHookMode(args: string[]): Promise<number> {
   if (sub === "uninstall") return runHookUninstall();
   if (sub === "" || sub.startsWith("--")) return runHook(args);
   process.stderr.write(
-    `Unknown hook subcommand: ${args[0]}\nUsage: ${STASHWISE_MCP_HOOK_COMMAND} [install|uninstall] [--min-score 0-1] [--k 1-25] [--timeout-ms 100-60000]\n`,
+    `Unknown hook subcommand: ${args[0]}\nUsage: ${STASHWISE_HOOK_COMMAND} [install|uninstall] [--min-score 0-1] [--k 1-25] [--timeout-ms 100-60000]\n`,
   );
   return 2;
 }
@@ -63,29 +65,35 @@ function printHelp(): void {
   process.stdout.write(
     [
       "",
-      "Stashwise MCP — search your Stashwise library + wiki from any AI agent, or your terminal.",
+      "Stashwise: search your library and wiki from any AI agent, or your terminal.",
       "",
       "Usage:",
-      `  ${STASHWISE_MCP_RUN_COMMAND}                 Start the stdio MCP server (default).`,
-      `  ${STASHWISE_MCP_AUTH_COMMAND}            Pair this machine with your Stashwise account.`,
-      `  ${STASHWISE_MCP_SEARCH_COMMAND} "..."    Search your library/wiki from the terminal.`,
-      `  ${STASHWISE_MCP_DOCTOR_COMMAND}          Check config, token, and backend reachability.`,
-      `  ${STASHWISE_MCP_HOOK_COMMAND} install    Register the Claude Code prompt suggestion hook.`,
-      `  ${STASHWISE_MCP_HOOK_COMMAND} uninstall  Remove the prompt suggestion hook.`,
-      `  ${STASHWISE_MCP_RUN_COMMAND} --version       Print the installed version.`,
+      "  stashwise                  Start the stdio MCP server (default; what agent hosts spawn).",
+      "  stashwise auth             Pair this machine with your Stashwise account.",
+      '  stashwise search "..."     Search your library/wiki from the terminal.',
+      "  stashwise doctor           Check config, token, and backend reachability.",
+      "  stashwise hook install     Register the Claude Code prompt suggestion hook.",
+      "  stashwise hook uninstall   Remove the prompt suggestion hook.",
+      "  stashwise --version        Print the installed version.",
       "",
       "Search flags:",
       "  --scope library|wiki|all   Limit the search surface (default: all).",
       "  --k 1-25                   Max results to return (default: 8).",
       "",
       "Hook flags (set on the command in settings.json):",
-      "  --min-score 0-1            Relevance threshold for suggestions (default: 0.45).",
+      "  --min-score 0-1            Score a result must clear to fill a slot (default: 0.45).",
+      "                             Note this decides WHICH results qualify, not WHETHER any",
+      "                             are shown. That is the shape gate, which stays silent",
+      "                             unless one result stands out from the rest.",
       "  --k 1-25                   Results fetched per prompt (default: 6).",
       "  --timeout-ms 100-60000     Search timeout before staying silent (default: 2500).",
       "",
       "Environment:",
       "  STASHWISE_API_URL   Override the backend URL (default https://stashwise-api.fly.dev/api/v1).",
       "  STASHWISE_WEB_URL   Override the webapp URL (default https://stashwise.co).",
+      "",
+      "Not installed globally? Every command also works as:",
+      `  ${STASHWISE_MCP_RUN_COMMAND} <subcommand>`,
       "",
       "Docs: https://stashwise.co/mcp",
       "",

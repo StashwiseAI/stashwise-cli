@@ -1,9 +1,9 @@
-// `stashwise-mcp doctor` — print configuration + token validity + backend
+// `stashwise doctor` — print configuration + token validity + backend
 // reachability. Designed for the "why isn't this working?" path so users
 // don't need a separate CLI binary to diagnose problems.
 
 import { ApiError, StashwiseApi } from "./api.js";
-import { STASHWISE_MCP_AUTH_COMMAND, STASHWISE_MCP_HOOK_COMMAND } from "./commands.js";
+import { STASHWISE_AUTH_COMMAND, STASHWISE_HOOK_COMMAND } from "./commands.js";
 import { loadConfig } from "./config.js";
 import { hookInstalledInSettings } from "./hook-install.js";
 import { getStoredToken, keychainBackend } from "./keychain.js";
@@ -57,7 +57,7 @@ export async function runDoctor(): Promise<number> {
     ok: Boolean(token),
     detail: token
       ? `${token.slice(0, 14)}… (via ${keychainBackend()})`
-      : `no token — run \`${STASHWISE_MCP_AUTH_COMMAND}\``,
+      : `no token. Run \`${STASHWISE_AUTH_COMMAND}\``,
   });
 
   if (token && backendOk) {
@@ -73,7 +73,7 @@ export async function runDoctor(): Promise<number> {
         checks.push({
           label: "Token authenticates",
           ok: false,
-          detail: "401 — token revoked or invalid. Run `auth` again.",
+          detail: "401: token revoked or invalid. Run `auth` again.",
         });
       } else {
         checks.push({
@@ -92,20 +92,20 @@ export async function runDoctor(): Promise<number> {
     ok: true,
     detail: hookInstalledInSettings()
       ? "installed in ~/.claude/settings.json"
-      : `not installed — run \`${STASHWISE_MCP_HOOK_COMMAND} install\` for proactive suggestions`,
+      : `not installed. Run \`${STASHWISE_HOOK_COMMAND} install\` for proactive suggestions`,
   });
 
   const allOk = checks.every((c) => c.ok);
   process.stdout.write(
     [
       "",
-      `Stashwise MCP — doctor`,
+      `Stashwise doctor`,
       "",
       ...checks.map(fmt),
       "",
       allOk
         ? "  All good. Tool calls should work in your agent host."
-        : "  Some checks failed — see notes above.",
+        : "  Some checks failed. See notes above.",
       "",
     ].join("\n") + "\n",
   );

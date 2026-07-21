@@ -1,4 +1,4 @@
-// `stashwise-mcp auth` — one-time device-code login.
+// `stashwise auth` — one-time device-code login.
 //
 // Flow:
 //   1. POST /auth/cli/start    → get device_code + user_code + verification_uri

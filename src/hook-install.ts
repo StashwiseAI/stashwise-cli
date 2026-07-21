@@ -1,4 +1,4 @@
-// `mcp hook install` / `mcp hook uninstall` — register the prompt hook in the
+// `stashwise hook install` / `stashwise hook uninstall` — register the prompt hook in the
 // user level Claude Code settings (~/.claude/settings.json) so suggestions
 // work in every project on this machine.
 //
@@ -41,16 +41,25 @@ const HOOK_TIMEOUT_SECONDS = 10;
  * npx resolves from its cache on every prompt instead of hitting the registry;
  * a later `hook install` from a newer version replaces the pin in place. */
 export function hookCommand(version: string = VERSION): string {
-  return `npx -y --package ${PACKAGE_NAME}@${version} mcp hook`;
+  return `npx -y --package ${PACKAGE_NAME}@${version} stashwise hook`;
 }
 
-/** Recognize our own entry regardless of the pinned version, so install is
- * idempotent and uninstall finds entries written by any prior version. */
+/** Recognize our own entry regardless of the pinned version OR the binary name
+ * it was written with, so install is idempotent and uninstall finds entries
+ * from any prior release.
+ *
+ * The binary was `mcp` up to 0.3.0 and is `stashwise` from 0.4.0. Matching only
+ * the current name would strand every existing install: installHookEntry
+ * replaces the first entry it *recognizes*, so an unrecognized old pin means a
+ * second entry gets appended beside it and the library is searched twice per
+ * prompt, while `hook uninstall` reports success having removed neither. */
+const HOOK_INVOCATION_RE = /\b(?:mcp|stashwise) hook\b/;
+
 export function isStashwiseHookCommand(command: unknown): boolean {
   return (
     typeof command === "string" &&
     command.includes(PACKAGE_NAME) &&
-    /\bmcp hook\b/.test(command)
+    HOOK_INVOCATION_RE.test(command)
   );
 }
 
@@ -195,7 +204,7 @@ export async function runHookInstall(): Promise<number> {
       `Stashwise prompt hook installed in ${path}.`,
       "Claude Code will now check your Stashwise library on each prompt and surface strong matches as context.",
       "The first prompt after install may be slow while npx warms its cache.",
-      "Remove it any time with: mcp hook uninstall",
+      "Remove it any time with: stashwise hook uninstall",
       "",
     ].join("\n"),
   );

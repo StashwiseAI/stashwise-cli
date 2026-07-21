@@ -2,52 +2,81 @@
   <img src="assets/lantern.png" alt="Stashwise" width="104" height="104" />
 </p>
 
-<h1 align="center">@stashwiseapp/mcp</h1>
+<h1 align="center">stashwise</h1>
 
 <p align="center">
-  <strong>Search everything you've saved in <a href="https://stashwise.co">Stashwise</a> — from any AI agent, or straight from your terminal.</strong>
+  <strong>Your saved research, in every answer.</strong><br />
+  <sub>the <code>stashwise</code> command, published as <a href="https://www.npmjs.com/package/@stashwiseapp/mcp"><code>@stashwiseapp/mcp</code></a></sub>
 </p>
 
-Stashwise is a personal knowledge base: you save articles, videos, threads, and posts, and it turns them into an AI-organized library and wiki. This package is the official [MCP](https://modelcontextprotocol.io) server that gives **Claude Code, Cursor, Codex, and Claude Desktop** a single tool — `search_stashwise` — to ground their answers in what *you've* actually saved, with citations back to the source.
+<p align="center">
+  <a href="https://www.npmjs.com/package/@stashwiseapp/mcp"><img src="https://img.shields.io/npm/v/@stashwiseapp/mcp?color=%23c9a227&label=npm" alt="npm version" /></a>
+  <img src="https://img.shields.io/node/v/@stashwiseapp/mcp?color=%23c9a227" alt="node version" />
+  <img src="https://img.shields.io/npm/l/@stashwiseapp/mcp?color=%23c9a227" alt="MIT license" />
+</p>
 
-No account yet? [Create one at stashwise.co](https://stashwise.co/signup) and save a few things first — the search only returns *your* library and wiki.
-
----
-
-## Prerequisites
-
-- **Node.js ≥ 18** (`node --version`). `npx` ships with npm.
-- A **Stashwise account** with some saved content.
-
-That's it — there's nothing to globally install. Every command below runs the package on demand via `npx -y --package @stashwiseapp/mcp@latest mcp`.
+[Stashwise](https://stashwise.co) is a personal knowledge base: you save articles, videos, threads and posts, and it turns them into an AI organized library and wiki. This package connects that library to **Claude Code, Cursor, Codex and Claude Desktop**, so the things you saved months ago show up in the answer you need today.
 
 ---
 
-## Quick start
+## What it actually looks like
 
-It's two steps: **(1)** add the server to your agent, **(2)** run `auth` once.
+You ask an ordinary question. You do not mention Stashwise, and you do not remember saving anything about it.
 
-### 1 · Add the server
+```console
+❯ is there an open source alternative to ahrefs
 
-Pick your host — each is a one-liner (or one click):
+  Stashwise · 1 related save: Ahrefs
 
-**Claude Code**
+⏺ Your library already has the answer's centerpiece. Let me verify
+  its current state and see what else exists.
 
-```bash
-claude mcp add -s user stashwise -- npx -y --package @stashwiseapp/mcp@latest mcp
+  ⎿  search_stashwise("open source SEO tool alternative")
+  ⎿  Web Search("OpenSEO github bensenescu self-hosted")
+
+  You saved OpenSEO in July: an open source, self hosted SEO tool
+  built as an alternative to Semrush and Ahrefs, with agent
+  integration for keyword research and competitor analysis.
+  → x.com/bensenescu/status/2078737738493301060
 ```
 
-**Cursor** — [**▸ Add to Cursor**](cursor://anysphere.cursor-deeplink/mcp/install?name=stashwise&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi0tcGFja2FnZSIsIkBzdGFzaHdpc2VhcHAvbWNwQGxhdGVzdCIsIm1jcCJdfQ)
+Three things happened there, and only the first is automatic:
 
-…or add it manually to `~/.cursor/mcp.json`:
+1. **The hook noticed.** Every prompt you submit is checked against your library. This one matched a save, so you got the one line notice naming it.
+2. **The agent disagreed with the match.** It got `Ahrefs`, judged that the commercial tool was not what you were asking for, and searched your library again with a better query of its own.
+3. **It found what the first pass missed** and answered from your own saved material, with the source link.
+
+That second step is the point. The automatic check only sees your raw prompt, so it guesses before anyone has worked out what you are really asking. The agent can then go back with a sharper query.
+
+---
+
+## Install
+
+```bash
+npm i -g @stashwiseapp/mcp
+stashwise auth
+```
+
+`auth` opens [stashwise.co/cli](https://stashwise.co/cli), you click **Authorize**, and a token lands in your OS keychain (macOS Keychain, Windows Credential Vault, Linux libsecret). On a headless box it also prints a URL and an 8 character code you can enter by hand.
+
+Then wire it into your agent. **Claude Code** gets both surfaces:
+
+```bash
+claude mcp add -s user stashwise -- stashwise    # the search tool
+stashwise hook install                           # the automatic checking
+```
+
+<details>
+<summary><b>Cursor, Codex, Claude Desktop, and running without a global install</b></summary>
+
+The prompt hook is Claude Code only. Every other host gets the `search_stashwise` tool.
+
+**Cursor** · [**▸ Add to Cursor**](cursor://anysphere.cursor-deeplink/mcp/install?name=stashwise&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi0tcGFja2FnZSIsIkBzdGFzaHdpc2VhcHAvbWNwQGxhdGVzdCIsInN0YXNod2lzZSJdfQ) or add it to `~/.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
-    "stashwise": {
-      "command": "npx",
-      "args": ["-y", "--package", "@stashwiseapp/mcp@latest", "mcp"]
-    }
+    "stashwise": { "command": "stashwise" }
   }
 }
 ```
@@ -55,18 +84,17 @@ claude mcp add -s user stashwise -- npx -y --package @stashwiseapp/mcp@latest mc
 **Codex CLI**
 
 ```bash
-codex mcp add stashwise -- npx -y --package @stashwiseapp/mcp@latest mcp
+codex mcp add stashwise -- stashwise
 ```
 
-…or add it manually to `~/.codex/config.toml`:
+…or in `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.stashwise]
-command = "npx"
-args = ["-y", "--package", "@stashwiseapp/mcp@latest", "mcp"]
+command = "stashwise"
 ```
 
-**Claude Desktop** — edit the config file (no CLI), then restart the app:
+**Claude Desktop** · edit the config, then restart the app:
 
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
@@ -74,39 +102,105 @@ args = ["-y", "--package", "@stashwiseapp/mcp@latest", "mcp"]
 ```json
 {
   "mcpServers": {
-    "stashwise": {
-      "command": "npx",
-      "args": ["-y", "--package", "@stashwiseapp/mcp@latest", "mcp"]
-    }
+    "stashwise": { "command": "stashwise" }
   }
 }
 ```
 
-### 2 · Authorize (run once)
+**Prefer not to install globally?** Every command works through npx, and every config above accepts it in place of `"command": "stashwise"`:
 
 ```bash
-npx -y --package @stashwiseapp/mcp@latest mcp auth
+npx -y --package @stashwiseapp/mcp@latest stashwise auth
 ```
 
-This opens the pairing page at **[stashwise.co/cli](https://stashwise.co/cli)** in your browser. Sign in, click **Authorize**, and a long-lived token is saved to your **OS keychain** (macOS Keychain / Windows Credential Vault / Linux libsecret). Your agent picks it up automatically on its next search.
+```json
+{
+  "command": "npx",
+  "args": ["-y", "--package", "@stashwiseapp/mcp@latest", "stashwise"]
+}
+```
 
-> **Run `auth` before your first search.** Without it, the tool replies "not authenticated." Headless/SSH box? `auth` also prints a URL and an 8-character code you can enter manually at `stashwise.co/cli`.
+</details>
+
+No Stashwise account yet? [Create one](https://stashwise.co/signup) and save a few things first. Search only ever returns your own library.
 
 ---
 
-## Verify it works
+## Two ways your library reaches the agent
 
-From the terminal — no agent required:
+**Pull** is the `search_stashwise` tool. The agent calls it when it decides your library is relevant, or when you ask directly. Works in every MCP host.
 
-```bash
-npx -y --package @stashwiseapp/mcp@latest mcp search "what did I save about HNSW indexes"
-```
+**Push** is the prompt hook. It checks every prompt you submit, before the agent sees it, and surfaces strong matches without anyone asking. Claude Code only.
 
-```
+Push is what makes the library ambient rather than something you have to remember to consult. It reaches you on two separate channels, deliberately:
+
+| Channel | Goes to | Why |
+|---|---|---|
+| `systemMessage` | you | The harness always displays it, so you learn what you saved even if the answer never mentions it |
+| `additionalContext` | the agent | So it can quote and cite the material inline |
+
+Earlier versions put both in one channel and depended on the model to relay what it found. It often did not, particularly when a loaded skill dominated the answer.
+
+---
+
+## What it costs you
+
+The hook runs on every prompt you type, so this matters more than it would for an ordinary CLI.
+
+| | |
+|---|---|
+| **Added latency** | **~180 ms** per prompt, warm. Measured 177 / 183 / 222 ms against production; roughly 130 to 170 ms of that is the search itself |
+| **Hard timeout** | 2500 ms, then it gives up silently. Tunable |
+| **Free prompts** | Anything under 15 characters, or starting with `/`, `!` or `#`, exits before any network call. Slash commands and shell lines cost nothing |
+| **On failure** | Missing token, unreachable backend, timeout, malformed input: all exit quietly. Your prompt is never blocked, altered or delayed beyond the timeout |
+| **What leaves your machine** | The prompt text, capped at 2000 characters, sent to your own account's backend. Nothing else |
+| **How noisy** | At most 3 suggestions, and each item is offered at most once per session |
+
+Set `STASHWISE_HOOK_DEBUG=1` to see on stderr why a given prompt stayed silent.
+
+---
+
+## When it stays quiet
+
+Most prompts produce nothing, by design. A suggestion has to be worth interrupting you for.
+
+The test is not a fixed score. It is whether one result **stands out from the rest**. That distinction matters because similarity scores are not comparable between questions: a broad prompt like "how should I structure skills for an AI agent" lands near the middle of a whole topic cluster and scores respectably against a dozen mediocre matches, while a narrow one like "SKILL.md frontmatter" lands somewhere sparse and scores poorly against the single item that genuinely answers it. Any fixed threshold is therefore too low for the first and too high for the second.
+
+So the hook looks at the shape of the results instead. A flat pack of similar scores means nothing stood out, and it stays silent no matter how high those scores are. A clear leader opens the gate.
+
+On top of that:
+
+- **Wiki entities are held to a higher bar than things you saved.** They are derived abstractions with no link to open, and they match incidental mentions: a generic `TypeScript` page will match any type error you ever paste.
+- **Anything without a real summary is dropped** rather than shown as a bare title.
+- **Nothing repeats within a session.**
+
+---
+
+## Reference
+
+<details>
+<summary><b>Commands</b></summary>
+
+| Command | What it does |
+|---|---|
+| `stashwise` | Start the stdio MCP server. This is what agent hosts spawn; you rarely run it yourself |
+| `stashwise auth` | Pair this machine with your account. Run once |
+| `stashwise search "..."` | Search from the terminal, no agent involved |
+| `stashwise doctor` | Check config, token validity and backend reachability. Run this first when something is off |
+| `stashwise hook install` | Register the prompt hook in `~/.claude/settings.json` |
+| `stashwise hook uninstall` | Remove it |
+| `stashwise --version` | Print the installed version |
+| `stashwise --help` | Full usage |
+
+`hook install` registers at the user level, so it applies to every project on the machine. It pins the command to the version you installed, so npx serves it from cache rather than hitting the registry on every prompt. Rerun it after upgrading to move the pin.
+
+```console
+$ stashwise search "what did I save about HNSW indexes"
+
 Results for "what did I save about HNSW indexes" (scope: all)
 
  1. Approximate Nearest Neighbors with HNSW  ·  youtube  ·  score 0.83
-    A walkthrough of hierarchical navigable small-world graphs and how the …
+    A walkthrough of hierarchical navigable small world graphs and how the …
     https://youtube.com/watch?v=…
 
  2. pgvector HNSW tuning notes  ·  github  ·  score 0.79
@@ -116,34 +210,25 @@ Results for "what did I save about HNSW indexes" (scope: all)
 2 results · 138ms
 ```
 
-Or just ask your agent: *"Search my Stashwise for what I saved about HNSW indexes."*
-
-`search` flags:
-
-| Flag | Values | Default | Meaning |
+| `search` flag | Values | Default | Meaning |
 |---|---|---|---|
-| `--scope` | `library` · `wiki` · `all` | `all` | Search saved items, extracted wiki entities, or both. |
-| `--k` | `1`–`25` | `8` | Max results to return. |
+| `--scope` | `library` · `wiki` · `all` | `all` | Saved items, extracted wiki entities, or both |
+| `--k` | `1` to `25` | `8` | Max results |
 
-```bash
-npx -y --package @stashwiseapp/mcp@latest mcp search rust borrow checker --scope wiki --k 5
-```
+</details>
 
----
+<details>
+<summary><b>The <code>search_stashwise</code> tool</b></summary>
 
-## The tool
-
-Your agent gets one tool:
-
-### `search_stashwise(query, k, scope)`
+Your agent gets exactly one tool.
 
 | Param | Type | Default | Notes |
 |---|---|---|---|
-| `query` | string (required) | — | Natural-language search query. |
-| `k` | integer 1–25 | `8` | Max results. |
-| `scope` | `library` · `wiki` · `all` | `all` | What to search. |
+| `query` | string (required) | none | Natural language search query |
+| `k` | integer 1 to 25 | `8` | Max results |
+| `scope` | `library` · `wiki` · `all` | `all` | What to search |
 
-Returns ranked snippets with citations. Shape:
+Returns ranked snippets with citations:
 
 ```json
 {
@@ -154,7 +239,7 @@ Returns ranked snippets with citations. Shape:
       "kind": "content",
       "id": "…",
       "title": "Approximate Nearest Neighbors with HNSW",
-      "snippet": "A walkthrough of hierarchical navigable small-world graphs…",
+      "snippet": "A walkthrough of hierarchical navigable small world graphs…",
       "source_url": "https://youtube.com/watch?v=…",
       "source_platform": "youtube",
       "score": 0.83,
@@ -165,88 +250,64 @@ Returns ranked snippets with citations. Shape:
 }
 ```
 
-It maps to the backend endpoint `POST /api/v1/agent/search`.
+`kind` is `content` for something you saved and `entity` for a concept the wiki extracted across several saves. Maps to `POST /api/v1/agent/search`.
 
----
+</details>
 
-## Proactive suggestions in Claude Code
+<details>
+<summary><b>Tuning the hook</b></summary>
 
-The MCP tool only fires when the agent decides to call it. The prompt hook makes your library ambient instead: every prompt you submit in Claude Code is semantically checked against your Stashwise saves, without you ever mentioning Stashwise.
-
-When something matches, you see a one line notice naming what you saved:
-
-```
-Stashwise · 2 related saves: 7 Types of AI Agents in Claude · Open-Sourced AI Agency System
-```
-
-The matching items are also handed to Claude, so it can cite them inline while answering. Those are deliberately separate channels: the notice is shown by the harness unconditionally, so you find out what you saved even when Claude's answer does not mention it.
-
-```bash
-npx -y --package @stashwiseapp/mcp@latest mcp hook install     # register in ~/.claude/settings.json
-npx -y --package @stashwiseapp/mcp@latest mcp hook uninstall   # remove it
-```
-
-`install` registers a `UserPromptSubmit` hook at the user level, so it works in every project on this machine. It pins the command to the currently installed version so npx serves it from cache on each prompt; rerun `install` after upgrading to move the pin.
-
-Built to stay out of the way:
-
-- **High confidence only.** At most 3 items, and only when the semantic score clears a threshold (default 0.45). Below it, the hook prints nothing.
-- **Saved material first.** Wiki entities are derived abstractions with nothing to open, and they match incidental mentions (a generic `TypeScript` page against any type error). They are held to a higher bar than saved content, and any result without a real summary is dropped rather than shown as a bare title.
-- **No repeats.** An item is suggested at most once per Claude Code session.
-- **Never blocks, never nags.** Missing token, unreachable backend, timeout (default 2500 ms), or malformed input all exit silently. Your prompt always goes through untouched.
-
-Tune it by editing the command in `~/.claude/settings.json`:
+Edit the command in `~/.claude/settings.json`:
 
 ```
-mcp hook --min-score 0.5 --k 10 --timeout-ms 4000
+stashwise hook --min-score 0.5 --k 10 --timeout-ms 4000
 ```
 
-Set `STASHWISE_HOOK_DEBUG=1` to see why the hook stayed silent (stderr only).
+| Flag | Range | Default | Meaning |
+|---|---|---|---|
+| `--min-score` | 0 to 1 | `0.45` | Score a result must clear to fill a slot. Note this decides *which* results qualify, not *whether* any are shown (that is the shape gate above) |
+| `--k` | 1 to 25 | `6` | Results fetched per prompt |
+| `--timeout-ms` | 100 to 60000 | `2500` | How long to wait before staying silent |
 
----
+Unknown flags are ignored, so a settings file written by a newer version never breaks an older binary.
 
-## Diagnostics
+</details>
 
-```bash
-npx -y --package @stashwiseapp/mcp@latest mcp doctor
-```
-
-Prints your resolved config, whether the stored token is valid, and whether the backend is reachable. Run this first when something's off.
-
-```bash
-npx -y --package @stashwiseapp/mcp@latest mcp --version   # print the installed version
-npx -y --package @stashwiseapp/mcp@latest mcp --help      # full usage
-```
-
----
-
-## Manage authorized agents
-
-See and revoke every machine you've paired at **[stashwise.co/account/mcp](https://stashwise.co/account/mcp)**.
-
----
-
-## Environment
+<details>
+<summary><b>Environment variables</b></summary>
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `STASHWISE_API_URL` | `https://stashwise-api.fly.dev/api/v1` | Backend base URL. |
-| `STASHWISE_WEB_URL` | `https://stashwise.co` | Webapp base URL (used by the `auth` flow). |
+| `STASHWISE_API_URL` | `https://stashwise-api.fly.dev/api/v1` | Backend base URL |
+| `STASHWISE_WEB_URL` | `https://stashwise.co` | Webapp base URL, used by `auth` |
+| `STASHWISE_HOOK_DEBUG` | unset | Set to `1` to log hook decisions to stderr |
 
 Pointing at a local backend during development:
 
 ```bash
-STASHWISE_API_URL=http://127.0.0.1:8000/api/v1 npx -y --package @stashwiseapp/mcp@latest mcp search "test"
+STASHWISE_API_URL=http://127.0.0.1:8000/api/v1 stashwise search "test"
 ```
 
----
+</details>
 
-## Troubleshooting
+<details>
+<summary><b>Troubleshooting</b></summary>
 
-- **"Stashwise is not authenticated."** — Run `npx -y --package @stashwiseapp/mcp@latest mcp auth`. If a search worked before and suddenly returns this, your token may have been revoked at `stashwise.co/account/mcp` — just re-run `auth`.
-- **Agent doesn't see the tool** — Restart the host after editing its config (Claude Desktop especially). In Claude Code, run `/mcp` to confirm `stashwise` is connected.
-- **`OS keychain unavailable …` warning** — Expected on some headless/CI Linux boxes without libsecret. The token falls back to `~/.stashwise/credentials.json` (mode `0600`); everything still works.
-- **Still stuck?** — `npx -y --package @stashwiseapp/mcp@latest mcp doctor` reports config, token validity, and backend reachability.
+- **"Stashwise is not authenticated."** Run `stashwise auth`. If searches worked before and suddenly stopped, the token may have been revoked from your account page; rerun `auth`.
+- **The agent does not see the tool.** Restart the host after editing its config, Claude Desktop especially. In Claude Code run `/mcp` to confirm `stashwise` is connected.
+- **`OS keychain unavailable …`** Expected on headless or CI Linux without libsecret. The token falls back to `~/.stashwise/credentials.json` at mode `0600` and everything still works.
+- **The hook went quiet after an upgrade.** Rerun `stashwise hook install` to move the version pin. A pin naming a version that has aged out of the npx cache resolves slowly or not at all, and because the hook fails silently by design, a dead pin looks exactly like "no matches found".
+- **Upgrading from 0.3.0 or earlier.** The binary was named `mcp` and is now `stashwise`. Existing hook pins are still recognized, so `hook install` migrates yours in place and `hook uninstall` still finds it. Nothing to do by hand.
+- **Still stuck?** `stashwise doctor` reports config, token validity and backend reachability in one shot.
+
+</details>
+
+<details>
+<summary><b>Managing paired machines</b></summary>
+
+Every machine you have authorized is listed under **Account → Connect AI agents** at [stashwise.co](https://stashwise.co), where you can revoke any of them. Access is read only: the agent can search your library, never modify it.
+
+</details>
 
 ---
 
