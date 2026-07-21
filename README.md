@@ -64,6 +64,8 @@ The hosted connection uses OAuth. Installing the Codex plugin—or adding the UR
 
 The Codex plugin also teaches Codex when to consult saved research, how to refine an incomplete match, and when writes are appropriate. It can search and read the library/wiki, save URLs and research notes, and organize item metadata. Deletion is intentionally unavailable.
 
+On local Codex surfaces, the plugin bundles an ambient `UserPromptSubmit` hook that reminds Codex to check Stashwise when saved research could materially improve an answer. The hook never reads credentials, sends the prompt over the network, or performs writes; searches still go through the OAuth-protected MCP tools. After installing or updating the plugin, open `/hooks`, review and trust the Stashwise hook, then start a new task. If the hook is disabled or untrusted, explicit Stashwise requests still work through the plugin skill and MCP server. Codex Cloud does not run the local lifecycle hook, so it uses that skill-based behavior instead.
+
 ### Local CLI and Claude Code hook
 
 ```bash
@@ -83,7 +85,7 @@ stashwise hook install                           # the automatic checking
 <details>
 <summary><b>Cursor, Codex, Claude Desktop, and running without a global install</b></summary>
 
-The prompt hook is Claude Code only. Every other host gets the `search_stashwise` tool.
+The direct pre-search hook installed by `stashwise hook install` is Claude Code only. The Codex plugin has its own ambient lifecycle hook; Cursor and other MCP hosts get the Stashwise tools without a prompt hook.
 
 **Cursor** · [**▸ Add to Cursor**](cursor://anysphere.cursor-deeplink/mcp/install?name=stashwise&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi0tcGFja2FnZSIsIkBzdGFzaHdpc2VhcHAvbWNwQGxhdGVzdCIsInN0YXNod2lzZSJdfQ) or add it to `~/.cursor/mcp.json`:
 
@@ -144,7 +146,7 @@ No Stashwise account yet? [Create one](https://stashwise.co/signup) and save a f
 
 **Pull** is the `search_stashwise` tool. The agent calls it when it decides your library is relevant, or when you ask directly. Works in every MCP host.
 
-**Push** is the prompt hook. It checks every prompt you submit, before the agent sees it, and surfaces strong matches without anyone asking. Claude Code only.
+**Push** is host-specific. Claude Code's CLI hook searches each eligible prompt before the agent sees it and surfaces strong matches without anyone asking. The local Codex plugin hook injects relevance guidance before the turn, then Codex uses its existing OAuth MCP connection when a search is warranted. Codex Cloud and hosts without lifecycle hooks rely on the plugin skill or their own agent instructions.
 
 Push is what makes the library ambient rather than something you have to remember to consult. It reaches you on two separate channels, deliberately:
 
@@ -157,9 +159,9 @@ Earlier versions put both in one channel and depended on the model to relay what
 
 ---
 
-## What it costs you
+## What the Claude Code pre-search costs you
 
-The hook runs on every prompt you type, so this matters more than it would for an ordinary CLI.
+The Claude Code pre-search hook runs on every eligible prompt you type, so this matters more than it would for an ordinary CLI. The Codex ambient hook makes no network request itself and adds only a short developer-context instruction.
 
 | | |
 |---|---|
@@ -174,7 +176,7 @@ Set `STASHWISE_HOOK_DEBUG=1` to see on stderr why a given prompt stayed silent.
 
 ---
 
-## When it stays quiet
+## When the Claude Code pre-search stays quiet
 
 Most prompts produce nothing, by design. A suggestion has to be worth interrupting you for.
 
