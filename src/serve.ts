@@ -28,10 +28,29 @@ const SearchInputSchema = z.object({
 
 const TOOL_NAME = "search_stashwise";
 
+// The description carries the one instruction the prompt hook structurally
+// cannot deliver.
+//
+// 0.3.0 added a line inviting a refined re-search, but it lives inside the
+// suggestion block, which is only emitted when the hook decides to suggest
+// something. On a silent prompt — precisely the case the invitation was
+// written for — nothing is printed and the instruction never arrives. Putting
+// it here instead makes it unconditional: the description is in the agent's
+// context whenever the server is connected, costs nothing per prompt, and
+// reaches Cursor and Codex rather than Claude Code alone.
+//
+// Both added sentences are conditionals keyed to something the agent can
+// observe (is this a topic the user might have saved; did a suggestion name
+// only one item), not prohibitions, which agents negotiate with under a
+// competing incentive.
 const TOOL_DEFINITION = {
   name: TOOL_NAME,
   description:
-    "Search the signed-in Stashwise user's saved library and wiki for content semantically related to `query`. Returns up to `k` ranked snippets with citations (title, source URL, snippet, score). Use this to ground answers in what the user has actually saved.",
+    "Search the signed-in Stashwise user's saved library and wiki for content semantically related to `query`. " +
+    "Returns up to `k` ranked snippets with citations (title, source URL, snippet, score). " +
+    "Use this to ground answers in what the user has actually saved. " +
+    "If the user asks about a topic they plausibly saved something about, search before answering, even when they do not mention Stashwise and did not ask you to. " +
+    "If a suggestion was already surfaced for this prompt, it was matched against the raw prompt text alone; when it looks incomplete or off target, search again with a query refined to what the user actually means.",
   inputSchema: {
     type: "object",
     properties: {
@@ -41,7 +60,7 @@ const TOOL_DEFINITION = {
       },
       k: {
         type: "integer",
-        description: "Max results to return (1–25). Default 8.",
+        description: "Max results to return (1 to 25). Default 8.",
         minimum: 1,
         maximum: 25,
         default: 8,
