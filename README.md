@@ -183,6 +183,7 @@ npx -y --package @stashwiseapp/mcp@latest mcp hook uninstall   # remove it
 Built to stay out of the way:
 
 - **High confidence only.** At most 3 items, and only when the semantic score clears a threshold (default 0.45). Below it, the hook prints nothing.
+- **Saved material first.** Wiki entities are derived abstractions with nothing to open, and they match incidental mentions (a generic `TypeScript` page against any type error). They are held to a higher bar than saved content, and any result without a real summary is dropped rather than shown as a bare title.
 - **No repeats.** An item is suggested at most once per Claude Code session.
 - **Never blocks, never nags.** Missing token, unreachable backend, timeout (default 2500 ms), or malformed input all exit silently. Your prompt always goes through untouched.
 

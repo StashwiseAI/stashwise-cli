@@ -5,6 +5,7 @@ import {
   formatSuggestions,
   parseHookArgs,
   parseHookPayload,
+  requiredScore,
   shouldQuery,
 } from "../src/hook.js";
 import {
@@ -125,6 +126,48 @@ describe("filterSuggestions", () => {
   it("returns empty for empty input", () => {
     expect(filterSuggestions([], 0.35, new Set())).toEqual([]);
   });
+
+  it("drops results whose snippet is empty or too short to inform", () => {
+    const results = [
+      item({ id: "bare", snippet: "" }),
+      item({ id: "stub", snippet: "Too short." }),
+      item({ id: "real" }),
+    ];
+    const kept = filterSuggestions(results, 0.45, new Set());
+    expect(kept.map((r) => r.id)).toEqual(["real"]);
+  });
+
+  it("holds wiki entities to a higher bar than saved content", () => {
+    // 0.57 is the live score of the generic "TypeScript" entity against
+    // "fix this typescript type error": above the content floor, below the
+    // entity bar.
+    const results = [
+      item({ id: "entity-mid", kind: "entity", score: 0.57, source_url: null }),
+      item({ id: "content-mid", kind: "content", score: 0.57 }),
+    ];
+    const kept = filterSuggestions(results, 0.45, new Set());
+    expect(kept.map((r) => r.id)).toEqual(["content-mid"]);
+  });
+
+  it("still admits a strongly matching entity", () => {
+    // The Ahrefs entity scored 0.68 when the prompt was actually about it.
+    const results = [
+      item({ id: "entity-strong", kind: "entity", score: 0.68, source_url: null }),
+    ];
+    expect(filterSuggestions(results, 0.45, new Set())).toHaveLength(1);
+  });
+});
+
+describe("requiredScore", () => {
+  it("uses the plain floor for content and a margin for entities", () => {
+    expect(requiredScore("content", 0.45)).toBeCloseTo(0.45);
+    expect(requiredScore("entity", 0.45)).toBeCloseTo(0.6);
+  });
+
+  it("tracks a custom floor", () => {
+    expect(requiredScore("content", 0.5)).toBeCloseTo(0.5);
+    expect(requiredScore("entity", 0.5)).toBeCloseTo(0.65);
+  });
 });
 
 describe("formatSuggestions", () => {
@@ -134,6 +177,15 @@ describe("formatSuggestions", () => {
     expect(block.endsWith("</stashwise-suggestions>")).toBe(true);
     expect(block).toContain("1. Orca (instagram, saved 2026-07-21):");
     expect(block).toContain("   https://example.com/orca");
+  });
+
+  it("states a binding citation requirement and an explicit silent branch", () => {
+    const block = formatSuggestions([item()]);
+    expect(block).toContain("REQUIRED:");
+    expect(block).toMatch(/cite it inline/);
+    expect(block).toMatch(/If none apply/);
+    // Soft phrasing lost to competing context in a real session; guard it.
+    expect(block).not.toMatch(/only if genuinely relevant/);
   });
 
   it("truncates long snippets", () => {
