@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -22,6 +22,14 @@ interface HookConfig {
 
 const hookPath = fileURLToPath(
   new URL("../plugins/stashwise/hooks/hooks.json", import.meta.url),
+);
+
+const marketplacePath = fileURLToPath(
+  new URL("../.agents/plugins/marketplace.json", import.meta.url),
+);
+
+const installerPath = fileURLToPath(
+  new URL("../scripts/install-codex-plugin.sh", import.meta.url),
 );
 
 function loadHook(): HookCommand {
@@ -107,5 +115,20 @@ describe("Stashwise Codex retrieval skill", () => {
     expect(skill).toContain("Hydrate every result the answer relies on");
     expect(skill).toContain("source takeaways");
     expect(skill).toContain("a completed read-only tool call is required");
+  });
+});
+
+describe("Stashwise Codex marketplace", () => {
+  it("uses a public identity and ships an executable installer", () => {
+    const marketplace = JSON.parse(readFileSync(marketplacePath, "utf8")) as {
+      name: string;
+      interface: { displayName: string };
+      plugins: Array<{ name: string }>;
+    };
+
+    expect(marketplace.name).toBe("stashwise");
+    expect(marketplace.interface.displayName).toBe("Stashwise");
+    expect(marketplace.plugins.map((plugin) => plugin.name)).toContain("stashwise");
+    expect(statSync(installerPath).mode & 0o111).not.toBe(0);
   });
 });

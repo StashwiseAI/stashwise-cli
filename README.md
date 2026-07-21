@@ -64,6 +64,14 @@ https://stashwise-api.fly.dev/mcp/
 
 The hosted connection uses OAuth. Installing the Codex plugin—or adding the URL as a remote MCP connector in Cursor or Claude—opens Stashwise in the browser for approval. It does not require Node, `npx`, an API token, or OS-keychain setup. See [`integrations/`](./integrations/) for the client-specific assets.
 
+Install the Codex plugin on macOS or Linux with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/StashwiseAI/stashwise-cli/main/scripts/install-codex-plugin.sh | sh
+```
+
+The installer uses Codex's native marketplace and plugin commands, can be rerun for updates, and migrates the earlier `stashwise@personal` beta installation. Windows and manual installation commands are in the [integration guide](./integrations/README.md#codex).
+
 The Codex plugin also teaches Codex when to consult saved research, how to refine an incomplete match, and when writes are appropriate. Search stays lightweight, then `get_stashwise_context` hydrates each result the answer actually uses: library results include the full item and its wiki links; wiki results include the synthesized page, linked source items and takeaways, claims, contradictions, and related entities. It can also save URLs and research notes and organize item metadata. Deletion is intentionally unavailable.
 
 On local Codex surfaces, the plugin bundles an ambient `UserPromptSubmit` hook that reminds Codex to check Stashwise when saved research could materially improve an answer. The hook never reads credentials, sends the prompt over the network, or performs writes; searches still go through the OAuth-protected MCP tools. After installing or updating the plugin, open `/hooks`, review and trust the Stashwise hook, then start a new task. If the hook is disabled or untrusted, explicit Stashwise requests still work through the plugin skill and MCP server. Codex Cloud does not run the local lifecycle hook, so it uses that skill-based behavior instead.

@@ -1,7 +1,7 @@
 {
-  "name": "personal",
+  "name": "stashwise",
   "interface": {
-    "displayName": "Personal"
+    "displayName": "Stashwise"
   },
   "plugins": [
     {
