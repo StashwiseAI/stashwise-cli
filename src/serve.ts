@@ -1,4 +1,5 @@
-// Stdio MCP server. Exposes one tool: `search_stashwise`.
+// Stdio MCP server. Legacy device credentials are read-only; write tools live
+// on the hosted OAuth MCP endpoint bundled by the Codex plugin.
 //
 // Tools that 401 on the backend (token revoked / unknown) return a
 // structured error message guiding the user back through `auth` rather
@@ -24,6 +25,16 @@ const SearchInputSchema = z.object({
     .max(2000, "query is too long"),
   k: z.number().int().min(1).max(25).default(8),
   scope: z.enum(["library", "wiki", "all"]).default("all"),
+});
+
+const RecentInputSchema = z.object({
+  days: z.number().int().min(1).max(30).default(1),
+  k: z.number().int().min(1).max(50).default(12),
+  scope: z.enum(["library", "wiki", "all"]).default("all"),
+});
+
+const ItemInputSchema = z.object({
+  content_id: z.string().min(1, "content_id is required"),
 });
 
 const TOOL_NAME = "search_stashwise";
@@ -77,6 +88,37 @@ const TOOL_DEFINITION = {
   },
 };
 
+const TOOL_DEFINITIONS = [
+  TOOL_DEFINITION,
+  {
+    name: "get_recent_stashwise",
+    description:
+      "Return the signed-in user's recent Stashwise saves and wiki entities for date-oriented questions.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "integer", minimum: 1, maximum: 30, default: 1 },
+        k: { type: "integer", minimum: 1, maximum: 50, default: 12 },
+        scope: { type: "string", enum: ["library", "wiki", "all"], default: "all" },
+      },
+    },
+  },
+  {
+    name: "get_stashwise_item",
+    description: "Get the full stored details for one Stashwise library item by id.",
+    inputSchema: {
+      type: "object",
+      properties: { content_id: { type: "string" } },
+      required: ["content_id"],
+    },
+  },
+  {
+    name: "list_stashwise_categories",
+    description: "List the signed-in user's Stashwise categories and their ids.",
+    inputSchema: { type: "object", properties: {} },
+  },
+];
+
 export async function runServe(): Promise<number> {
   const config = loadConfig();
   const api = new StashwiseApi(config);
@@ -87,11 +129,11 @@ export async function runServe(): Promise<number> {
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [TOOL_DEFINITION],
+    tools: TOOL_DEFINITIONS,
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    if (request.params.name !== TOOL_NAME) {
+    if (!TOOL_DEFINITIONS.some((tool) => tool.name === request.params.name)) {
       return {
         content: [
           { type: "text", text: `Unknown tool: ${request.params.name}` },
@@ -100,7 +142,15 @@ export async function runServe(): Promise<number> {
       };
     }
 
-    const parse = SearchInputSchema.safeParse(request.params.arguments ?? {});
+    const schema =
+      request.params.name === TOOL_NAME
+        ? SearchInputSchema
+        : request.params.name === "get_recent_stashwise"
+          ? RecentInputSchema
+          : request.params.name === "get_stashwise_item"
+            ? ItemInputSchema
+            : z.object({});
+    const parse = schema.safeParse(request.params.arguments ?? {});
     if (!parse.success) {
       return {
         content: [
@@ -124,12 +174,19 @@ export async function runServe(): Promise<number> {
     }
 
     try {
-      const result = await api.search(
-        token,
-        parse.data.query,
-        parse.data.k,
-        parse.data.scope,
-      );
+      let result: unknown;
+      if (request.params.name === TOOL_NAME) {
+        const args = SearchInputSchema.parse(parse.data);
+        result = await api.search(token, args.query, args.k, args.scope);
+      } else if (request.params.name === "get_recent_stashwise") {
+        const args = RecentInputSchema.parse(parse.data);
+        result = await api.recent(token, args.days, args.k, args.scope);
+      } else if (request.params.name === "get_stashwise_item") {
+        const args = ItemInputSchema.parse(parse.data);
+        result = await api.getItem(token, args.content_id);
+      } else {
+        result = await api.listCategories(token);
+      }
       return {
         content: [
           {

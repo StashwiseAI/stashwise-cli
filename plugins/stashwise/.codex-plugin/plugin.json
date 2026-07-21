@@ -1,0 +1,35 @@
+{
+  "name": "stashwise",
+  "version": "0.1.0",
+  "description": "Search, save, and organize your personal Stashwise research from Codex.",
+  "author": {
+    "name": "StashwiseAI",
+    "url": "https://stashwise.co"
+  },
+  "homepage": "https://stashwise.co/mcp",
+  "repository": "https://github.com/StashwiseAI/stashwise-cli",
+  "license": "MIT",
+  "keywords": ["research", "knowledge-base", "library", "mcp", "citations"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Stashwise",
+    "shortDescription": "Bring your saved research into every answer",
+    "longDescription": "Search your private Stashwise library and wiki, retrieve recent saves, preserve sourced research notes, and organize saved knowledge without leaving Codex.",
+    "developerName": "StashwiseAI",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://stashwise.co",
+    "privacyPolicyURL": "https://stashwise.co/privacy",
+    "termsOfServiceURL": "https://stashwise.co/terms",
+    "defaultPrompt": [
+      "What have I saved about this topic?",
+      "Save this research to my Stashwise library",
+      "Organize my recent Stashwise saves"
+    ],
+    "brandColor": "#C9A227",
+    "composerIcon": "./assets/lantern.png",
+    "logo": "./assets/lantern.png",
+    "screenshots": []
+  },
+  "mcpServers": "./.mcp.json"
+}

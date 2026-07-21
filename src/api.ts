@@ -39,6 +39,12 @@ export interface AgentSearchResponse {
   retrieval_ms: number;
 }
 
+export interface AgentRecentResponse {
+  results: AgentSearchResultItem[];
+  since: string;
+  retrieval_ms: number;
+}
+
 export interface MeResponse {
   id: string;
   email: string | null;
@@ -106,6 +112,30 @@ export class StashwiseApi {
       body: JSON.stringify({ query, k, scope }),
       signal,
     });
+  }
+
+  recent(
+    token: string,
+    days: number,
+    k: number,
+    scope: "library" | "wiki" | "all",
+  ): Promise<AgentRecentResponse> {
+    return this.request<AgentRecentResponse>("/agent/recent", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ days, k, scope }),
+    });
+  }
+
+  getItem(token: string, contentId: string): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>(
+      `/agent/content/${encodeURIComponent(contentId)}`,
+      { token },
+    );
+  }
+
+  listCategories(token: string): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("/agent/categories", { token });
   }
 
   me(token: string): Promise<MeResponse> {
