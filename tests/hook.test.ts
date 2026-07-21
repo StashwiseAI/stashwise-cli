@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AgentSearchResultItem } from "../src/api.js";
 import {
+  buildHookResponse,
   filterSuggestions,
   formatSuggestions,
+  formatUserNotice,
   parseHookArgs,
   parseHookPayload,
   requiredScore,
@@ -179,13 +181,56 @@ describe("formatSuggestions", () => {
     expect(block).toContain("   https://example.com/orca");
   });
 
-  it("states a binding citation requirement and an explicit silent branch", () => {
+  it("no longer leans on the model to notify the user", () => {
     const block = formatSuggestions([item()]);
-    expect(block).toContain("REQUIRED:");
-    expect(block).toMatch(/cite it inline/);
-    expect(block).toMatch(/If none apply/);
-    // Soft phrasing lost to competing context in a real session; guard it.
-    expect(block).not.toMatch(/only if genuinely relevant/);
+    // Both shipped wordings failed in real sessions. Delivery moved to
+    // systemMessage, so this block must not claim the user cannot see it.
+    expect(block).not.toMatch(/cannot see this block/);
+    expect(block).not.toMatch(/REQUIRED:/);
+  });
+});
+
+describe("formatUserNotice", () => {
+  it("lists titles with a count", () => {
+    const notice = formatUserNotice([item({ title: "Orca" }), item({ title: "Pi" })]);
+    expect(notice).toBe("Stashwise · 2 related saves: Orca · Pi");
+  });
+
+  it("uses the singular for one match", () => {
+    expect(formatUserNotice([item({ title: "Orca" })])).toBe(
+      "Stashwise · 1 related save: Orca",
+    );
+  });
+
+  it("truncates a very long title", () => {
+    const notice = formatUserNotice([item({ title: "x".repeat(120) })]);
+    expect(notice.length).toBeLessThan(110);
+    expect(notice).toContain("…");
+  });
+});
+
+describe("buildHookResponse", () => {
+  it("emits both channels in valid JSON", () => {
+    const parsed = JSON.parse(buildHookResponse([item()]));
+    expect(parsed.systemMessage).toContain("Stashwise");
+    expect(parsed.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "<stashwise-suggestions>",
+    );
+  });
+
+  it("keeps the user notice independent of the model context block", () => {
+    // The whole point of the redesign: the user is told even if the model
+    // never relays anything from additionalContext.
+    const parsed = JSON.parse(buildHookResponse([item({ title: "Orca" })]));
+    expect(parsed.systemMessage).toContain("Orca");
+    expect(parsed.systemMessage).not.toContain("<stashwise-suggestions>");
+  });
+
+  it("survives titles containing quotes and newlines", () => {
+    const raw = buildHookResponse([item({ title: 'He said "hi"\nthen left' })]);
+    expect(() => JSON.parse(raw)).not.toThrow();
+    expect(raw).not.toContain("\n");
   });
 
   it("truncates long snippets", () => {
