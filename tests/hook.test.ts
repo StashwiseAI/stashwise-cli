@@ -240,9 +240,27 @@ describe("gateOpens", () => {
     { name: "semrush alternatives", open: true, scores: [0.638, 0.515, 0.469, 0.458, 0.418, 0.407] },
     { name: "deepseek locally", open: true, scores: [0.606, 0.499, 0.416, 0.405, 0.391, 0.37] },
     { name: "first users from reddit", open: true, scores: [0.481, 0.445, 0.378, 0.357, 0.35, 0.33] },
-    { name: "gibberish", open: false, scores: [0.35, 0.344, 0.339, 0.311, 0.284, 0.262] },
+    { name: "gibberish", open: false, scores: [0.344, 0.339, 0.311, 0.284, 0.262, 0.258] },
     { name: "unrelated but coherent", open: false, scores: [0.212, 0.199, 0.191, 0.189, 0.179, 0.149] },
   ];
+
+  // These arrays are dated snapshots, not live assertions. They drifted three
+  // times in a single afternoon: once when the backend stopped serving
+  // summaryless entities, once when 13 junk entities were purged, and once
+  // from the ordinary churn of saving things. A future calibration returning
+  // different numbers is normal and is not by itself a regression.
+  //
+  // What must hold is the *shape* claim each row encodes: a flat pack stays
+  // shut, a peaked one opens. That is what the assertions below test, and it
+  // is stable in a way the underlying scores are not.
+  //
+  // Note also that gibberish and the unrelated probe are held shut twice over,
+  // by MIN_TOP_SCORE as well as by prominence (top1 of 0.344 and 0.212 against
+  // a 0.42 floor). Their prominence can drift freely without threatening
+  // anything. Only the "structure skills" row rests on prominence alone, since
+  // its 0.581 leader clears the absolute guard, so that is the row whose
+  // margin is worth watching. It has held at 0.042 against the 0.07 threshold
+  // across every calibration so far.
 
   for (const probe of PROBES) {
     it(`${probe.open ? "opens" : "stays shut"} for ${probe.name}`, () => {
