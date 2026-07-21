@@ -3,7 +3,7 @@
     "stashwise": {
       "type": "http",
       "url": "https://stashwise-api.fly.dev/mcp/",
-      "oauth_resource": "https://stashwise-api.fly.dev/mcp"
+      "oauth_resource": "https://stashwise-api.fly.dev/mcp/"
     }
   }
 }
