@@ -3,8 +3,9 @@
 // don't need a separate CLI binary to diagnose problems.
 
 import { ApiError, StashwiseApi } from "./api.js";
-import { STASHWISE_MCP_AUTH_COMMAND } from "./commands.js";
+import { STASHWISE_MCP_AUTH_COMMAND, STASHWISE_MCP_HOOK_COMMAND } from "./commands.js";
 import { loadConfig } from "./config.js";
+import { hookInstalledInSettings } from "./hook-install.js";
 import { getStoredToken, keychainBackend } from "./keychain.js";
 
 interface CheckResult {
@@ -83,6 +84,16 @@ export async function runDoctor(): Promise<number> {
       }
     }
   }
+
+  // Informational: an uninstalled hook is a valid setup, so it never fails
+  // doctor; the detail just points at the install command.
+  checks.push({
+    label: "Claude Code prompt hook",
+    ok: true,
+    detail: hookInstalledInSettings()
+      ? "installed in ~/.claude/settings.json"
+      : `not installed — run \`${STASHWISE_MCP_HOOK_COMMAND} install\` for proactive suggestions`,
+  });
 
   const allOk = checks.every((c) => c.ok);
   process.stdout.write(

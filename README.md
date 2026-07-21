@@ -169,6 +169,33 @@ It maps to the backend endpoint `POST /api/v1/agent/search`.
 
 ---
 
+## Proactive suggestions in Claude Code
+
+The MCP tool only fires when the agent decides to call it. The prompt hook makes your library ambient instead: every prompt you submit in Claude Code is semantically checked against your Stashwise saves, and strong matches are injected as context, so Claude can say "you saved a reel about exactly this" without you ever mentioning Stashwise.
+
+```bash
+npx -y --package @stashwiseapp/mcp@latest mcp hook install     # register in ~/.claude/settings.json
+npx -y --package @stashwiseapp/mcp@latest mcp hook uninstall   # remove it
+```
+
+`install` registers a `UserPromptSubmit` hook at the user level, so it works in every project on this machine. It pins the command to the currently installed version so npx serves it from cache on each prompt; rerun `install` after upgrading to move the pin.
+
+Built to stay out of the way:
+
+- **High confidence only.** At most 3 items, and only when the semantic score clears a threshold (default 0.45). Below it, the hook prints nothing.
+- **No repeats.** An item is suggested at most once per Claude Code session.
+- **Never blocks, never nags.** Missing token, unreachable backend, timeout (default 2500 ms), or malformed input all exit silently. Your prompt always goes through untouched.
+
+Tune it by editing the command in `~/.claude/settings.json`:
+
+```
+mcp hook --min-score 0.5 --k 10 --timeout-ms 4000
+```
+
+Set `STASHWISE_HOOK_DEBUG=1` to see why the hook stayed silent (stderr only).
+
+---
+
 ## Diagnostics
 
 ```bash
