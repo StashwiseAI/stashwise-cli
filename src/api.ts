@@ -45,6 +45,8 @@ export interface AgentRecentResponse {
   retrieval_ms: number;
 }
 
+export type AgentResultKind = "content" | "entity";
+
 export interface MeResponse {
   id: string;
   email: string | null;
@@ -130,6 +132,17 @@ export class StashwiseApi {
   getItem(token: string, contentId: string): Promise<Record<string, unknown>> {
     return this.request<Record<string, unknown>>(
       `/agent/content/${encodeURIComponent(contentId)}`,
+      { token },
+    );
+  }
+
+  getContext(
+    token: string,
+    kind: AgentResultKind,
+    resultId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>(
+      `/agent/context/${kind}/${encodeURIComponent(resultId)}`,
       { token },
     );
   }

@@ -10,6 +10,8 @@ After installing or updating, open `/hooks` in Codex, review and trust the Stash
 
 Codex Cloud does not run this local lifecycle hook. The plugin skill remains the fallback there and still teaches the agent when and how to search Stashwise.
 
+Search results are intentionally compact candidate matches. Before using one as evidence, agents call `get_stashwise_context`: content matches return the full saved item, takeaways, notes, links, and wiki entities; wiki matches return the full synthesized page, source items and their takeaways, claims, contradictions, and related entities.
+
 ## Cursor
 
 Import [`cursor.mcp.json`](./cursor.mcp.json) as the user-level MCP configuration. Cursor discovers the Stashwise OAuth flow from the remote server on first connection.

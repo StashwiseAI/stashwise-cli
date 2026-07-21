@@ -48,6 +48,8 @@ describe("Stashwise Codex plugin hook", () => {
       expect(command).toContain("read-only Stashwise tool");
       expect(command).toContain("Skip Stashwise for greetings");
       expect(command).toContain("refine the query once");
+      expect(command).toContain("Loading the skill alone does not count");
+      expect(command).toContain("get_stashwise_context");
       expect(command).toContain("Never write to Stashwise unless the user explicitly asks");
       expect(command).not.toMatch(
         /\b(curl|wget|fetch|http|token|keychain|Invoke-WebRequest)\b/i,
@@ -83,6 +85,27 @@ describe("Stashwise Codex plugin hook", () => {
     expect(output.hookSpecificOutput.additionalContext).toContain(
       "private research saved in Stashwise",
     );
+    expect(output.hookSpecificOutput.additionalContext).toContain(
+      "hydrate every result used in a substantive answer",
+    );
     expect(result.stdout).not.toContain(privatePrompt);
+  });
+});
+
+describe("Stashwise Codex retrieval skill", () => {
+  it("hydrates every search result used as evidence", () => {
+    const skillPath = fileURLToPath(
+      new URL(
+        "../plugins/stashwise/skills/search-stashwise/SKILL.md",
+        import.meta.url,
+      ),
+    );
+    const skill = readFileSync(skillPath, "utf8");
+
+    expect(skill).toContain("candidates, not complete evidence");
+    expect(skill).toContain("call `get_stashwise_context`");
+    expect(skill).toContain("Hydrate every result the answer relies on");
+    expect(skill).toContain("source takeaways");
+    expect(skill).toContain("a completed read-only tool call is required");
   });
 });

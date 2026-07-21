@@ -37,6 +37,11 @@ const ItemInputSchema = z.object({
   content_id: z.string().min(1, "content_id is required"),
 });
 
+const ContextInputSchema = z.object({
+  kind: z.enum(["content", "entity"]),
+  result_id: z.string().min(1, "result_id is required"),
+});
+
 const TOOL_NAME = "search_stashwise";
 
 // The description carries the one instruction the prompt hook structurally
@@ -61,7 +66,8 @@ const TOOL_DEFINITION = {
     "Returns up to `k` ranked snippets with citations (title, source URL, snippet, score). " +
     "Use this to ground answers in what the user has actually saved. " +
     "If the user asks about a topic they plausibly saved something about, search before answering, even when they do not mention Stashwise and did not ask you to. " +
-    "If a suggestion was already surfaced for this prompt, it was matched against the raw prompt text alone; when it looks incomplete or off target, search again with a query refined to what the user actually means.",
+    "If a suggestion was already surfaced for this prompt, it was matched against the raw prompt text alone; when it looks incomplete or off target, search again with a query refined to what the user actually means. " +
+    "Search results are candidates, not complete evidence: call `get_stashwise_context` with each used result's `kind` and `id` (passed as `result_id`) before a substantive answer.",
   inputSchema: {
     type: "object",
     properties: {
@@ -88,7 +94,7 @@ const TOOL_DEFINITION = {
   },
 };
 
-const TOOL_DEFINITIONS = [
+export const TOOL_DEFINITIONS = [
   TOOL_DEFINITION,
   {
     name: "get_recent_stashwise",
@@ -110,6 +116,19 @@ const TOOL_DEFINITIONS = [
       type: "object",
       properties: { content_id: { type: "string" } },
       required: ["content_id"],
+    },
+  },
+  {
+    name: "get_stashwise_context",
+    description:
+      "Hydrate a search result before using it in a substantive answer. For kind `content`, returns the full item including raw content, takeaways, notes, links, and its wiki entities. For kind `entity`, returns the full wiki page including source items and their takeaways, claims, contradictions, and related entities.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["content", "entity"] },
+        result_id: { type: "string" },
+      },
+      required: ["kind", "result_id"],
     },
   },
   {
@@ -149,7 +168,9 @@ export async function runServe(): Promise<number> {
           ? RecentInputSchema
           : request.params.name === "get_stashwise_item"
             ? ItemInputSchema
-            : z.object({});
+            : request.params.name === "get_stashwise_context"
+              ? ContextInputSchema
+              : z.object({});
     const parse = schema.safeParse(request.params.arguments ?? {});
     if (!parse.success) {
       return {
@@ -184,6 +205,9 @@ export async function runServe(): Promise<number> {
       } else if (request.params.name === "get_stashwise_item") {
         const args = ItemInputSchema.parse(parse.data);
         result = await api.getItem(token, args.content_id);
+      } else if (request.params.name === "get_stashwise_context") {
+        const args = ContextInputSchema.parse(parse.data);
+        result = await api.getContext(token, args.kind, args.result_id);
       } else {
         result = await api.listCategories(token);
       }
