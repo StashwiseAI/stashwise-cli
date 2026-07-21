@@ -171,7 +171,15 @@ It maps to the backend endpoint `POST /api/v1/agent/search`.
 
 ## Proactive suggestions in Claude Code
 
-The MCP tool only fires when the agent decides to call it. The prompt hook makes your library ambient instead: every prompt you submit in Claude Code is semantically checked against your Stashwise saves, and strong matches are injected as context, so Claude can say "you saved a reel about exactly this" without you ever mentioning Stashwise.
+The MCP tool only fires when the agent decides to call it. The prompt hook makes your library ambient instead: every prompt you submit in Claude Code is semantically checked against your Stashwise saves, without you ever mentioning Stashwise.
+
+When something matches, you see a one line notice naming what you saved:
+
+```
+Stashwise · 2 related saves: 7 Types of AI Agents in Claude · Open-Sourced AI Agency System
+```
+
+The matching items are also handed to Claude, so it can cite them inline while answering. Those are deliberately separate channels: the notice is shown by the harness unconditionally, so you find out what you saved even when Claude's answer does not mention it.
 
 ```bash
 npx -y --package @stashwiseapp/mcp@latest mcp hook install     # register in ~/.claude/settings.json

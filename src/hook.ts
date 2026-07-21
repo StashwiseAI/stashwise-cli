@@ -132,20 +132,23 @@ function savedDate(savedAt: string | null): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : null;
 }
 
-/** Render the context block the harness injects. Kept compact: the block
- * rides along on every matching prompt, so every line must earn its tokens.
+/** Render the context block the model receives. Kept compact: the block rides
+ * along on every matching prompt, so every line must earn its tokens.
  *
- * The instruction is a positive recipe, not a permission. The first version
- * read "Mention them only if genuinely relevant", and a real session dropped
- * three on-topic saves without a word because a competing skill dominated the
- * answer: the user saw no evidence the hook had run at all. Soft guidance
- * loses to a strong competing context, so state what the output must contain
- * and give the silent case an explicit branch instead of leaving it implied. */
+ * This channel is grounding, not delivery. Two shipped versions tried to make
+ * the model responsible for telling the user what was found: first with soft
+ * guidance ("mention only if genuinely relevant"), then with an imperative
+ * ("REQUIRED: cite it inline"). Both were ignored in real sessions when a
+ * loaded skill dominated the answer, because hook output reaches the model as
+ * injected context and agents are instructed to treat that channel as
+ * background rather than as instructions to obey. Escalating the wording
+ * inside a non binding channel could not have worked. The user now learns
+ * what was found from `systemMessage` (see buildHookResponse), which the
+ * harness always shows, so this block can go back to plain description. */
 export function formatSuggestions(items: AgentSearchResultItem[]): string {
   const lines: string[] = [
     "<stashwise-suggestions>",
-    "These are the user's OWN saved items, retrieved from their Stashwise library because they match this prompt. The user cannot see this block.",
-    "REQUIRED: if any item below informs your answer, cite it inline at the point you use it, naming the title and its link, and noting they saved it. If none apply, ignore this block entirely and never mention Stashwise.",
+    "Saved items from the user's own Stashwise library that match this prompt. They have already been shown the titles, so citing one that informs your answer is useful; skip them silently if none apply.",
   ];
   items.forEach((item, i) => {
     const meta: string[] = [];
@@ -161,6 +164,38 @@ export function formatSuggestions(items: AgentSearchResultItem[]): string {
   });
   lines.push("</stashwise-suggestions>");
   return lines.join("\n");
+}
+
+/** The one line the user actually sees. This is the delivery channel: the
+ * harness renders `systemMessage` unconditionally, so awareness no longer
+ * depends on the model choosing to relay anything. Titles only, because the
+ * point is recognition ("I saved something about this") rather than reading
+ * the summary inline. */
+export function formatUserNotice(items: AgentSearchResultItem[]): string {
+  const titles = items
+    .map((i) => i.title.replace(/\s+/g, " ").trim())
+    .map((t) => (t.length > 48 ? `${t.slice(0, 47)}…` : t))
+    .join(" · ");
+  const count = items.length;
+  return `Stashwise · ${count} related save${count === 1 ? "" : "s"}: ${titles}`;
+}
+
+/** The JSON envelope written to stdout.
+ *
+ * Claude Code hooks expose two distinct channels and they are not
+ * interchangeable: `hookSpecificOutput.additionalContext` reaches the model
+ * only, while `systemMessage` is shown to the user. Earlier versions printed
+ * bare text, which the harness treats as context, so everything the user was
+ * meant to notice depended on the model relaying it. Emitting both means a
+ * match is surfaced even when the model says nothing about it. */
+export function buildHookResponse(items: AgentSearchResultItem[]): string {
+  return JSON.stringify({
+    systemMessage: formatUserNotice(items),
+    hookSpecificOutput: {
+      hookEventName: "UserPromptSubmit",
+      additionalContext: formatSuggestions(items),
+    },
+  });
 }
 
 /** Parse `--min-score`, `--k`, `--timeout-ms` in the same inline/space
@@ -321,6 +356,6 @@ export async function runHook(args: string[]): Promise<number> {
   for (const s of suggestions) seen.add(s.id);
   writeSeenIds(payload.sessionId, seen);
 
-  process.stdout.write(`${formatSuggestions(suggestions)}\n`);
+  process.stdout.write(`${buildHookResponse(suggestions)}\n`);
   return 0;
 }
