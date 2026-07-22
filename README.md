@@ -72,7 +72,7 @@ curl -fsSL https://raw.githubusercontent.com/StashwiseAI/stashwise-cli/main/scri
 
 The installer uses Codex's native marketplace and plugin commands, can be rerun for updates, and migrates the earlier `stashwise@personal` beta installation. Windows and manual installation commands are in the [integration guide](./integrations/README.md#codex).
 
-The Codex plugin also teaches Codex when to consult saved research, how to refine an incomplete match, and when writes are appropriate. Search stays lightweight, then `get_stashwise_context` hydrates each result the answer actually uses: library results include the full item and its wiki links; wiki results include the synthesized page, linked source items and takeaways, claims, contradictions, and related entities. It can also save URLs and research notes and organize item metadata. Deletion is intentionally unavailable.
+The Codex plugin also teaches Codex when to consult saved research, how to refine an incomplete match, and when writes are appropriate. Search stays lightweight, then `get_stashwise_context` hydrates each result the answer actually uses: library results include the full item and its wiki links; wiki results include the synthesized page, linked source items and takeaways, claims, contradictions, and related entities. With explicit user intent, it can also save URLs and research notes, create nested folders, and move items. Deletion, folder rename/reparent, and account management are intentionally unavailable.
 
 On local Codex surfaces, the plugin bundles an ambient `UserPromptSubmit` hook that reminds Codex to check Stashwise when saved research could materially improve an answer. The hook never reads credentials, sends the prompt over the network, or performs writes; searches still go through the OAuth-protected MCP tools. After installing or updating the plugin, open `/hooks`, review and trust the Stashwise hook, then start a new task. If the hook is disabled or untrusted, explicit Stashwise requests still work through the plugin skill and MCP server. Codex Cloud does not run the local lifecycle hook, so it uses that skill-based behavior instead.
 
@@ -244,9 +244,9 @@ Results for "what did I save about HNSW indexes" (scope: all)
 </details>
 
 <details>
-<summary><b>The <code>search_stashwise</code> tool</b></summary>
+<summary><b>The Stashwise MCP tools</b></summary>
 
-Your agent gets exactly one tool.
+Your agent gets retrieval tools plus folder organization tools. `list_stashwise_categories` returns full hierarchy paths; `create_stashwise_folder` creates one node at a time; and `move_stashwise_items` moves up to 100 items atomically (use a null category for Unsorted). Writes require explicit user intent.
 
 | Param | Type | Default | Notes |
 |---|---|---|---|
@@ -331,7 +331,7 @@ STASHWISE_API_URL=http://127.0.0.1:8000/api/v1 stashwise search "test"
 <details>
 <summary><b>Managing paired machines</b></summary>
 
-Every machine you have authorized is listed under **Account → Connect AI agents** at [stashwise.co](https://stashwise.co), where you can revoke any of them. Access is read only: the agent can search your library, never modify it.
+Every machine you have authorized is listed under **Account → Connect AI agents** at [stashwise.co](https://stashwise.co), where you can revoke any of them. Newly paired agents can search your library and, only when you explicitly ask, create folders or move items. They cannot delete content or manage your account. Older read-only pairings stay read-only until you rerun `stashwise auth`.
 
 </details>
 

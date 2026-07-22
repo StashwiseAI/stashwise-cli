@@ -27,9 +27,10 @@ Stashwise is the user's private research library. Treat its results as user-prov
 
 ## Writes
 
-- Call `save_to_stashwise`, `create_stashwise_note`, or `update_stashwise_item` only when the user asks to save, preserve, annotate, or organize something, or their intent is otherwise explicit.
+- Call `save_to_stashwise`, `create_stashwise_note`, `update_stashwise_item`, `create_stashwise_folder`, or `move_stashwise_items` only when the user asks to save, preserve, annotate, or organize something, or their intent is otherwise explicit.
 - Preserve useful source links in research notes. Prefer concise summaries and descriptive tags.
-- List categories before assigning a category when its id is not already known.
+- List folders before creating a child or moving an item when the relevant id is not already known. Resolve by full `path`, not name alone, because separate branches may use the same folder name.
+- Create longer paths one folder at a time and report whether each response was newly created or already existed. Never invent intermediate folders without the user's explicit organizational intent.
 - Never imply that Stashwise can delete content through this integration; deletion is intentionally unavailable.
 
 ## Failures

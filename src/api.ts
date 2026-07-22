@@ -47,6 +47,35 @@ export interface AgentRecentResponse {
 
 export type AgentResultKind = "content" | "entity";
 
+export interface AgentCategory {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  path: string[];
+  depth: number;
+  child_count: number;
+  content_count: number;
+  subtree_content_count: number;
+  description?: string | null;
+  sort_order?: number;
+}
+
+export interface AgentCategoryListResponse {
+  categories: AgentCategory[];
+}
+
+export interface AgentCategoryCreateResponse {
+  created: boolean;
+  category: AgentCategory;
+}
+
+export interface AgentItemMoveResponse {
+  moved_count: number;
+  content_ids: string[];
+  category_id: string | null;
+  path: string[];
+}
+
 export interface MeResponse {
   id: string;
   email: string | null;
@@ -147,8 +176,32 @@ export class StashwiseApi {
     );
   }
 
-  listCategories(token: string): Promise<Record<string, unknown>> {
-    return this.request<Record<string, unknown>>("/agent/categories", { token });
+  listCategories(token: string): Promise<AgentCategoryListResponse> {
+    return this.request<AgentCategoryListResponse>("/agent/categories", { token });
+  }
+
+  createFolder(
+    token: string,
+    name: string,
+    parentId?: string | null,
+  ): Promise<AgentCategoryCreateResponse> {
+    return this.request<AgentCategoryCreateResponse>("/agent/categories", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ name, parent_id: parentId ?? null }),
+    });
+  }
+
+  moveItems(
+    token: string,
+    contentIds: string[],
+    categoryId: string | null,
+  ): Promise<AgentItemMoveResponse> {
+    return this.request<AgentItemMoveResponse>("/agent/items/move", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ content_ids: contentIds, category_id: categoryId }),
+    });
   }
 
   me(token: string): Promise<MeResponse> {

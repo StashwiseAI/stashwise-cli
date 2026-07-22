@@ -1,5 +1,6 @@
-// Stdio MCP server. Legacy device credentials are read-only; write tools live
-// on the hosted OAuth MCP endpoint bundled by the Codex plugin.
+// Stdio MCP server. Newly paired credentials can manage folder organization;
+// legacy read-only credentials keep working for retrieval and must be paired
+// again before a write.
 //
 // Tools that 401 on the backend (token revoked / unknown) return a
 // structured error message guiding the user back through `auth` rather
@@ -41,6 +42,38 @@ const ContextInputSchema = z.object({
   kind: z.enum(["content", "entity"]),
   result_id: z.string().min(1, "result_id is required"),
 });
+
+const FolderInputSchema = z.object({
+  name: z.string().min(1, "name is required").max(255, "name is too long"),
+  parent_id: z.string().min(1).nullable().optional(),
+});
+
+const MoveItemsInputSchema = z.object({
+  content_ids: z
+    .array(z.string().min(1, "content ids cannot be blank"))
+    .min(1, "at least one content id is required")
+    .max(100, "at most 100 content ids may be moved")
+    .refine((ids) => new Set(ids).size === ids.length, "content ids must be unique"),
+  category_id: z.string().min(1).nullable(),
+});
+
+const READ_ONLY_ANNOTATIONS = {
+  readOnlyHint: true,
+  openWorldHint: false,
+  destructiveHint: false,
+} as const;
+
+const PRIVATE_WRITE_ANNOTATIONS = {
+  readOnlyHint: false,
+  openWorldHint: false,
+  destructiveHint: false,
+} as const;
+
+const PRIVATE_OVERWRITE_ANNOTATIONS = {
+  readOnlyHint: false,
+  openWorldHint: false,
+  destructiveHint: true,
+} as const;
 
 const TOOL_NAME = "search_stashwise";
 
@@ -92,6 +125,7 @@ const TOOL_DEFINITION = {
     },
     required: ["query"],
   },
+  annotations: READ_ONLY_ANNOTATIONS,
 };
 
 export const TOOL_DEFINITIONS = [
@@ -108,6 +142,7 @@ export const TOOL_DEFINITIONS = [
         scope: { type: "string", enum: ["library", "wiki", "all"], default: "all" },
       },
     },
+    annotations: READ_ONLY_ANNOTATIONS,
   },
   {
     name: "get_stashwise_item",
@@ -117,6 +152,7 @@ export const TOOL_DEFINITIONS = [
       properties: { content_id: { type: "string" } },
       required: ["content_id"],
     },
+    annotations: READ_ONLY_ANNOTATIONS,
   },
   {
     name: "get_stashwise_context",
@@ -130,11 +166,53 @@ export const TOOL_DEFINITIONS = [
       },
       required: ["kind", "result_id"],
     },
+    annotations: READ_ONLY_ANNOTATIONS,
   },
   {
     name: "list_stashwise_categories",
-    description: "List the signed-in user's Stashwise categories and their ids.",
+    description:
+      "List every signed-in Stashwise folder with its id, full path, depth, child count, direct item count, and descendant total.",
     inputSchema: { type: "object", properties: {} },
+    annotations: READ_ONLY_ANNOTATIONS,
+  },
+  {
+    name: "create_stashwise_folder",
+    description:
+      "Create one Stashwise folder, optionally beneath an existing parent. Use only after the user explicitly asks to create or organize folders.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", minLength: 1, maxLength: 255 },
+        parent_id: {
+          type: ["string", "null"],
+          description: "Parent folder id, or null/omit to create at Library root.",
+        },
+      },
+      required: ["name"],
+    },
+    annotations: PRIVATE_WRITE_ANNOTATIONS,
+  },
+  {
+    name: "move_stashwise_items",
+    description:
+      "Move 1–100 Stashwise items into a folder, or use null for Unsorted. Use only after explicit user intent because this changes existing organization.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content_ids: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          maxItems: 100,
+        },
+        category_id: {
+          type: ["string", "null"],
+          description: "Destination folder id, or null for Unsorted.",
+        },
+      },
+      required: ["content_ids", "category_id"],
+    },
+    annotations: PRIVATE_OVERWRITE_ANNOTATIONS,
   },
 ];
 
@@ -170,6 +248,10 @@ export async function runServe(): Promise<number> {
             ? ItemInputSchema
             : request.params.name === "get_stashwise_context"
               ? ContextInputSchema
+              : request.params.name === "create_stashwise_folder"
+                ? FolderInputSchema
+                : request.params.name === "move_stashwise_items"
+                  ? MoveItemsInputSchema
               : z.object({});
     const parse = schema.safeParse(request.params.arguments ?? {});
     if (!parse.success) {
@@ -208,6 +290,12 @@ export async function runServe(): Promise<number> {
       } else if (request.params.name === "get_stashwise_context") {
         const args = ContextInputSchema.parse(parse.data);
         result = await api.getContext(token, args.kind, args.result_id);
+      } else if (request.params.name === "create_stashwise_folder") {
+        const args = FolderInputSchema.parse(parse.data);
+        result = await api.createFolder(token, args.name, args.parent_id);
+      } else if (request.params.name === "move_stashwise_items") {
+        const args = MoveItemsInputSchema.parse(parse.data);
+        result = await api.moveItems(token, args.content_ids, args.category_id);
       } else {
         result = await api.listCategories(token);
       }
@@ -226,9 +314,21 @@ export async function runServe(): Promise<number> {
           isError: true,
         };
       }
+      if (err instanceof ApiError && err.status === 403) {
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                "This Stashwise token is read-only. Rerun `stashwise auth` and approve the new folder-management access, then retry.",
+            },
+          ],
+          isError: true,
+        };
+      }
       const message = err instanceof Error ? err.message : String(err);
       return {
-        content: [{ type: "text", text: `Search failed: ${message}` }],
+        content: [{ type: "text", text: `Stashwise request failed: ${message}` }],
         isError: true,
       };
     }
