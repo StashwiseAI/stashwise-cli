@@ -33,10 +33,13 @@ Use these checks in the new task:
 2. Say `hello`. Codex should not search Stashwise.
 3. Ask `Use Stashwise to list my categories`. Explicit tool use should still work even with the hook disabled.
 4. Ask to save a URL. Codex should write only because the prompt explicitly requests it.
+5. Ask to create a nested folder and move a known item. Codex should list folders first, create one node at a time, and move only after that explicit request. Folder and item deletion remain unavailable.
 
 Codex Cloud does not run this local lifecycle hook. The plugin skill remains the fallback there and still teaches the agent when and how to search Stashwise.
 
 Search results are intentionally compact candidate matches. Before using one as evidence, agents call `get_stashwise_context`: content matches return the full saved item, takeaways, notes, links, and wiki entities; wiki matches return the full synthesized page, source items and their takeaways, claims, contradictions, and related entities.
+
+Write tools require explicit user intent. The connector may save material, create folders, and move items, but it cannot delete content, rename/reparent folders, or manage the user's account.
 
 ## Cursor
 
