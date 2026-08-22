@@ -1,7 +1,7 @@
 {
   "name": "stashwise",
   "version": "0.1.2",
-  "description": "Search, save, and organize your personal Stashwise research from Codex.",
+  "description": "Proactively ground recommendations, strategy, planning, comparisons, research, and recall in the user's private Stashwise saves, even when Stashwise is not mentioned.",
   "author": {
     "name": "StashwiseAI",
     "url": "https://stashwise.co"
@@ -9,15 +9,25 @@
   "homepage": "https://stashwise.co/mcp",
   "repository": "https://github.com/StashwiseAI/stashwise-cli",
   "license": "MIT",
-  "keywords": ["research", "knowledge-base", "library", "mcp", "citations"],
+  "keywords": [
+    "research",
+    "knowledge-base",
+    "library",
+    "mcp",
+    "citations"
+  ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Stashwise",
     "shortDescription": "Bring your saved research into every answer",
-    "longDescription": "Search your private Stashwise library and wiki, retrieve recent saves, preserve sourced research notes, and organize saved knowledge without leaving Codex.",
+    "longDescription": "Searches the user's private Stashwise library and wiki before substantive recommendation, strategy, planning, comparison, research, or recall answers whenever saved material may help, even when they do not mention Stashwise. Retrieves full context before relying on a result, combines saved research with current web evidence rather than replacing it, and writes only on explicit request.",
     "developerName": "StashwiseAI",
     "category": "Productivity",
-    "capabilities": ["Interactive", "Read", "Write"],
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
     "websiteURL": "https://stashwise.co",
     "privacyPolicyURL": "https://stashwise.co/privacy",
     "termsOfServiceURL": "https://stashwise.co/terms",
