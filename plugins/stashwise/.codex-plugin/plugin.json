@@ -1,6 +1,6 @@
 {
   "name": "stashwise",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Proactively ground recommendations, strategy, planning, comparisons, research, and recall in the user's private Stashwise saves, even when Stashwise is not mentioned.",
   "author": {
     "name": "StashwiseAI",
