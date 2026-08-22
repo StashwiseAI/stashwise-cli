@@ -75,6 +75,42 @@ const PRIVATE_OVERWRITE_ANNOTATIONS = {
   destructiveHint: true,
 } as const;
 
+// Connector-level routing description, sent on `initialize`. This decides
+// whether a host loads these tools AT ALL: hosts that defer tool loading see
+// only the server name and this text first, so every tool description below is
+// downstream of winning here. This server previously sent nothing, which left
+// it with no way to win that step. Kept in sync with the hosted server's
+// `instructions` in flow-app/backend/app/hosted_mcp.py — the two surfaces
+// drifting is what caused the original miss.
+export const CONNECTOR_INSTRUCTIONS = [
+  "Stashwise is the connected user's personal research library: the articles, videos, " +
+    "posts, and notes they saved, plus the wiki built from them. Treat it as their " +
+    "memory layer and use it proactively.",
+  'Always search for RESOURCE RECALL, even when the user never mentions Stashwise and ' +
+    'never says they saved anything. Resource recall sounds like "what was that tool ' +
+    'that...", "what was that app for...", "what was that article about...", "I remember ' +
+    'seeing something that...", or "do I have anything about X?". Whenever the thing ' +
+    "being recalled is a tool, app, site, article, video, post, product, library, " +
+    "repository, technique, or idea, search Stashwise before falling back on conversation " +
+    "memory or your own knowledge. Question length is irrelevant; a one line question " +
+    "still counts.",
+  "Also search before answering research, planning, strategy, comparison, recommendation, " +
+    'or brainstorming questions whenever saved material could relate to the topic. "How do ' +
+    'I get my first 100 users?", "which tool should I use for this?", and "help me plan ' +
+    'this" all qualify.',
+  "Where memories live: personal facts the user told you, and decisions made earlier in " +
+    "conversation, are yours rather than Stashwise's. Anything they found, read, watched, " +
+    "saved, or researched is Stashwise's. When a question could be either, check Stashwise " +
+    "rather than guess.",
+  "When you are unsure whether anything relevant is saved, search rather than skip. The " +
+    "search is read only and typically returns in under 200ms. Do not substitute a public " +
+    "web search for the user's own saved research: search Stashwise first, then add a web " +
+    "search when genuinely current external facts are needed.",
+  "Skip it only for greetings, tasks unrelated to knowledge, and requests that explicitly " +
+    "ask for a general answer. Hydrate every result you rely on with get_stashwise_context " +
+    "before making claims about it, and cite source URLs.",
+].join("\n\n");
+
 const TOOL_NAME = "search_stashwise";
 
 // The description carries the one instruction the prompt hook structurally
@@ -95,18 +131,22 @@ const TOOL_NAME = "search_stashwise";
 const TOOL_DEFINITION = {
   name: TOOL_NAME,
   description:
-    "Search the signed-in Stashwise user's saved library and wiki for content semantically related to `query`. " +
-    "Returns up to `k` ranked snippets with citations (title, source URL, snippet, score). " +
-    "Use this to ground answers in what the user has actually saved. " +
-    "If the user asks about a topic they plausibly saved something about, search before answering, even when they do not mention Stashwise and did not ask you to. " +
-    "If a suggestion was already surfaced for this prompt, it was matched against the raw prompt text alone; when it looks incomplete or off target, search again with a query refined to what the user actually means. " +
-    "Search results are candidates, not complete evidence: call `get_stashwise_context` with each used result's `kind` and `id` (passed as `result_id`) before a substantive answer.",
+    "Search the signed-in Stashwise user's saved library and wiki: the articles, videos, posts, and notes they saved, plus the wiki built from them. " +
+    "Returns up to `k` ranked candidates with citations (title, source URL, snippet, score). " +
+    "Call this before answering research, comparison, planning, recommendation, or recall questions whenever the user's own saves could add evidence, even when they do not mention Stashwise and did not ask you to. " +
+    'Always call it for resource recall, however short the question: "what was that tool that...", "what was that article about...", "I remember seeing something that...", "do I have anything about X?", and equally when they refer to "my research", "my library", "what I saved", or "what I read". ' +
+    "Search is semantic rather than keyword based, so pass a short natural sentence in the user's own words and keep it to the topic itself; appending extra terms or platform names drags results toward saves that merely came from those platforms. " +
+    "If a suggestion was already surfaced for this prompt, it was matched against the raw prompt text alone; when it looks incomplete or off target, search again with different phrasing rather than more terms. " +
+    "Results are candidates, not evidence: call `get_stashwise_context` with each used result's `kind` and `id` (passed as `result_id`) before making claims about what it says.",
   inputSchema: {
     type: "object",
     properties: {
       query: {
         type: "string",
-        description: "Natural-language search query.",
+        description:
+          "A short natural-language phrase describing what the user wants to know, in "
+          + "their own words. Matched semantically against the text of their saves, so a "
+          + "plain sentence retrieves better than a keyword list.",
       },
       k: {
         type: "integer",
@@ -222,7 +262,7 @@ export async function runServe(): Promise<number> {
 
   const server = new Server(
     { name: "@stashwiseapp/mcp", version: VERSION },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {} }, instructions: CONNECTOR_INSTRUCTIONS },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
