@@ -1,6 +1,6 @@
 ---
 name: search-stashwise
-description: Use the connected user's private Stashwise library and wiki to ground answers, retrieve recent saves, preserve research, and organize saved items.
+description: Search the user's private Stashwise library before answering substantive recommendation, strategy, planning, comparison, research, or recall questions when saved material may help, even when the user does not mention Stashwise. Hydrate every result used. Write only when explicitly asked.
 ---
 
 # Stashwise

@@ -132,3 +132,48 @@ describe("Stashwise Codex marketplace", () => {
     expect(statSync(installerPath).mode & 0o111).not.toBe(0);
   });
 });
+
+describe("skill activation metadata", () => {
+  // A host sees only the skill's name and description when deciding whether to
+  // load it; the body is read afterward. So a description that says what the
+  // skill DOES, rather than when to activate it, is invisible at exactly the
+  // moment the decision is made. That is the same failure already fixed on the
+  // MCP tool description and the server instructions.
+  const frontmatter = () => {
+    const skillPath = fileURLToPath(
+      new URL(
+        "../plugins/stashwise/skills/search-stashwise/SKILL.md",
+        import.meta.url,
+      ),
+    );
+    const raw = readFileSync(skillPath, "utf8");
+    const match = raw.match(/^---\n([\s\S]*?)\n---/);
+    if (!match) throw new Error("SKILL.md has no frontmatter block");
+    return match[1];
+  };
+
+  it("names the triggering question types in the description", () => {
+    const description = frontmatter().toLowerCase();
+
+    for (const kind of ["recommendation", "planning", "comparison", "recall"]) {
+      expect(description).toContain(kind);
+    }
+    // The indirect case is the one that fails in practice.
+    expect(description).toContain("does not mention stashwise");
+    // Must stay short: it is matched during selection, not read as a body.
+    expect(description.length).toBeLessThan(400);
+  });
+
+  it("keeps the manifest as routing copy rather than a feature list", () => {
+    const manifestPath = fileURLToPath(
+      new URL("../plugins/stashwise/.codex-plugin/plugin.json", import.meta.url),
+    );
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const blob = (
+      manifest.description + " " + manifest.interface.longDescription
+    ).toLowerCase();
+
+    expect(blob).toContain("recommendation");
+    expect(blob).toContain("not mention");
+  });
+});
