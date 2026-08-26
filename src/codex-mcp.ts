@@ -22,7 +22,13 @@ export interface CodexRunner {
 
 export const realCodex: CodexRunner = {
   run(args) {
-    return execFileSync("codex", args, { encoding: "utf8", timeout: 60_000 });
+    return execFileSync("codex", args, {
+      encoding: "utf8",
+      timeout: 60_000,
+      // Same reason as install.ts: stderr is inherited unless silenced, and
+      // codex narrates.
+      stdio: ["ignore", "pipe", "ignore"],
+    });
   },
 };
 
@@ -85,8 +91,13 @@ function existing(codex: CodexRunner): { present: boolean; matches: boolean; ent
 }
 
 export function installCodex(
-  argv: { command: string; args: string[] },
-  options: { configPath: string; codex?: CodexRunner; dryRun?: boolean },
+  url: string,
+  options: {
+    configPath: string;
+    codex?: CodexRunner;
+    dryRun?: boolean;
+    spec?: { addArgs(url: string): string[]; listArgs: string[]; removeArgs: string[] };
+  },
 ): CodexOutcome {
   const codex = options.codex ?? realCodex;
   const found = existing(codex);
@@ -98,14 +109,9 @@ export function installCodex(
     return { status: "managed", reason: "already provided by the Codex plugin" };
   }
 
-  const desired = [argv.command, ...argv.args].join(" ");
   if (found.present) {
     const current = found.entry as Record<string, unknown>;
-    const currentLine = [
-      typeof current.command === "string" ? current.command : "",
-      ...(Array.isArray(current.args) ? current.args : []),
-    ].join(" ");
-    if (currentLine === desired) return { status: "unchanged" };
+    if (current.url === url) return { status: "unchanged" };
   }
   if (options.dryRun) {
     return { status: "installed", replaced: found.present, backupPath: null };
@@ -121,8 +127,8 @@ export function installCodex(
   }
 
   try {
-    if (owned) codex.run(["mcp", "remove", "stashwise"]);
-    codex.run(["mcp", "add", "stashwise", "--", argv.command, ...argv.args]);
+    if (owned) codex.run(options.spec?.removeArgs ?? ["mcp", "remove", "stashwise"]);
+    codex.run(options.spec?.addArgs?.(url) ?? ["mcp", "add", "stashwise", "--url", url]);
   } catch (err) {
     return { status: "failed", reason: err instanceof Error ? err.message : String(err) };
   }

@@ -16,7 +16,7 @@
 //   cancelled sign in still leaves correct configs that `stashwise auth`
 //   finishes later.
 
-import { execFile } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
@@ -24,19 +24,23 @@ import { delimiter, join } from "node:path";
 import { runAuth } from "./auth.js";
 import {
   CLIENTS,
+  HOSTED_MCP_URL,
   detectClients,
   entryFor,
-  guiPath,
-  serverArgv,
   type ClientId,
+  type CliClientSpec,
   type Detection,
   type PathEnv,
 } from "./clients.js";
 import { readJsonConfig, writeJsonConfig } from "./config-file.js";
 import { installCodex, uninstallCodex } from "./codex-mcp.js";
-import { npxPrefixDir, runHookInstall } from "./hook-install.js";
+import { runHookInstall } from "./hook-install.js";
 import { getStoredToken } from "./keychain.js";
-import { installServerEntry, removeServerEntry } from "./mcp-config.js";
+import {
+  installServerEntry,
+  isStashwiseServerEntry,
+  removeServerEntry,
+} from "./mcp-config.js";
 
 export type Status =
   | "installed"
@@ -95,39 +99,38 @@ export function parseInstallArgs(args: string[]): InstallOptions | { error: stri
   return options;
 }
 
-const PROBE_TIMEOUT_MS = 60_000;
-
 /**
- * Prove the server actually starts before we point anyone at it.
+ * Is the server there, and is it the one we think?
  *
- * Spawned as argv rather than through a shell, because that is how an MCP host
- * spawns it. Verifying a shell invocation would be verifying something that
- * never happens.
+ * Nothing runs locally any more, so the old probe, which started npx and asked
+ * it for a version, no longer describes anything a client will do. What a
+ * client actually does first is dial the URL unauthenticated and read the
+ * challenge, so that is what we check: a 401 carrying a WWW-Authenticate that
+ * points back at this same host. A 200 would mean an open endpoint, and
+ * anything else means the address is wrong.
  */
-function probe(
-  argv: { command: string; args: string[] },
-  env?: Record<string, string>,
-): Promise<{ ok: boolean; detail: string }> {
-  return new Promise((resolve) => {
-    execFile(
-      argv.command,
-      [...argv.args, "--version"],
-      {
-        timeout: PROBE_TIMEOUT_MS,
-        env: env ? { ...process.env, ...env } : process.env,
-        windowsHide: true,
-      },
-      (err, stdout) => {
-        const version = String(stdout ?? "").trim();
-        if (!err && /^\d+\.\d+\.\d+/.test(version)) {
-          resolve({ ok: true, detail: version });
-          return;
-        }
-        const reason = err && "killed" in err && err.killed ? "timed out" : String(err ?? "no version");
-        resolve({ ok: false, detail: reason.split("\n")[0] });
-      },
-    );
-  });
+async function probeHosted(url: string): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { accept: "application/json, text/event-stream" },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (response.status !== 401) {
+      return { ok: false, detail: `expected an authentication challenge, got ${response.status}` };
+    }
+    const challenge = response.headers.get("www-authenticate") ?? "";
+    const host = new URL(url).host;
+    if (!challenge.includes(host)) {
+      return {
+        ok: false,
+        detail: "the server points somewhere else for authentication, which strict clients reject",
+      };
+    }
+    return { ok: true, detail: "reachable, and asks for sign in" };
+  } catch (err) {
+    return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 function ask(question: string): Promise<boolean> {
@@ -187,6 +190,80 @@ export function renderSummary(results: ClientResult[], dryRun = false): string {
     lines.push("", `  Restart ${named} to pick up the change.`);
   }
   return lines.join("\n");
+}
+
+/** What this client currently has registered for us, read from its own config. */
+function readCurrentUrl(spec: CliClientSpec, configPath: string | null): string | null {
+  if (!configPath) return null;
+  const read = readJsonConfig(configPath);
+  if (read.kind !== "json" || !read.doc) return null;
+  const servers = read.doc.mcpServers;
+  if (typeof servers !== "object" || servers === null) return null;
+  for (const [key, value] of Object.entries(servers as Record<string, unknown>)) {
+    if (!isStashwiseServerEntry(value, key)) continue;
+    const entry = value as Record<string, unknown>;
+    // Gemini names the streamable transport `httpUrl`; the others use `url`.
+    for (const field of ["url", "httpUrl"]) {
+      if (typeof entry[field] === "string") return entry[field] as string;
+    }
+    return "";
+  }
+  return null;
+}
+
+/**
+ * Let a client register its own server.
+ *
+ * Claude Code, Codex and Gemini each ship an `mcp add` that speaks http. Using
+ * it means the client parses and validates its own config, so "we wrote it" and
+ * "it works" stop being separate claims, and we never reformat a file another
+ * program owns.
+ *
+ * Codex is the one that also gets its file checked afterwards: its config is
+ * hand written TOML full of comments, and a rewrite that flattened them would
+ * be silent otherwise.
+ */
+function installViaCli(spec: CliClientSpec, configPath: string | null, dryRun: boolean): ClientResult {
+  const base = { id: spec.id, label: spec.label, restartRequired: spec.restartRequired };
+  if (spec.id === "codex") {
+    const outcome = installCodex(HOSTED_MCP_URL, {
+      configPath: configPath ?? "",
+      dryRun,
+      spec,
+    });
+    if (outcome.status === "unchanged") return { ...base, status: "unchanged" };
+    if (outcome.status === "managed") {
+      return { ...base, status: "unchanged", detail: outcome.reason };
+    }
+    if (outcome.status === "failed") return { ...base, status: "failed", detail: outcome.reason };
+    return { ...base, status: outcome.replaced ? "updated" : "installed" };
+  }
+
+  // Read the client's own config to decide what is there, rather than grepping
+  // the CLI's output. The first attempt searched `claude mcp list` for our URL
+  // and found it inside the connection *error message*, so a broken entry
+  // reported itself as already correct. Reading is safe; it is writing these
+  // files that we delegate.
+  const currentUrl = readCurrentUrl(spec, configPath);
+  if (currentUrl === HOSTED_MCP_URL) return { ...base, status: "unchanged" };
+  const already = currentUrl !== null;
+  if (dryRun) return { ...base, status: already ? "updated" : "installed" };
+  try {
+    const quiet = {
+      encoding: "utf8" as const,
+      timeout: 60_000,
+      stdio: ["ignore", "pipe", "ignore"] as ("ignore" | "pipe")[],
+    };
+    if (already) execFileSync(spec.bin, spec.removeArgs, quiet);
+    execFileSync(spec.bin, spec.addArgs(HOSTED_MCP_URL), quiet);
+  } catch (err) {
+    return {
+      ...base,
+      status: "failed",
+      detail: err instanceof Error ? err.message.split("\n")[0] : String(err),
+    };
+  }
+  return { ...base, status: already ? "updated" : "installed" };
 }
 
 function writeClient(
@@ -270,37 +347,15 @@ export async function runInstall(args: string[]): Promise<number> {
     return 0;
   }
 
-  const prefix = npxPrefixDir();
-  // `npx --prefix` fails with ENOENT when the directory does not exist, which
-  // on a machine that has never run Stashwise it does not. This is ours to
-  // create, unlike every client directory below.
-  mkdirSync(prefix, { recursive: true });
-  const argv = serverArgv(prefix);
-
-  process.stdout.write("  Checking the server starts...\n");
-  const direct = await probe(argv);
-  if (!direct.ok && !options.force) {
+  process.stdout.write("  Checking the Stashwise server...\n");
+  const reachable = await probeHosted(HOSTED_MCP_URL);
+  if (!reachable.ok && !options.force) {
     process.stderr.write(
-      `  Could not start the server: ${direct.detail}\n` +
-        "  Nothing was changed. Rerun with --force to configure anyway.\n\n",
+      `  ${reachable.detail}\n  Nothing was changed. Rerun with --force to configure anyway.\n\n`,
     );
     return 1;
   }
-  process.stdout.write(`    ok, version ${direct.detail}\n`);
-
-  const hasGui = present.some((d) => d.spec.launch === "gui");
-  if (hasGui) {
-    // The failure this catches: npx on PATH for a terminal but not for an app
-    // launched by the window manager, which is how a "successful" install ends
-    // up doing nothing in Cursor.
-    const gui = await probe(argv, { PATH: guiPath(process.execPath) });
-    process.stdout.write(
-      gui.ok
-        ? "    ok under a desktop app's PATH\n"
-        : `    warning: not resolvable under a desktop app's PATH (${gui.detail})\n`,
-    );
-  }
-  process.stdout.write("\n");
+  process.stdout.write(`    ${reachable.detail}\n\n`);
 
   // Everything starts absent; the loop below fills in whatever is installed.
   const results: ClientResult[] = detections.map((d) => ({
@@ -313,37 +368,21 @@ export async function runInstall(args: string[]): Promise<number> {
   for (let i = 0; i < detections.length; i += 1) {
     const detection = detections[i];
     if (!detection.installed) continue;
-    if (detection.spec.kind === "cli") {
-      const outcome = installCodex(argv, {
-        configPath: detection.configPath ?? "",
-        dryRun: options.dryRun,
-      });
+    if (detection.spec.kind === "manual") {
       results[i] = {
         id: detection.spec.id,
         label: detection.spec.label,
         restartRequired: detection.spec.restartRequired,
-        status:
-          outcome.status === "unchanged"
-            ? "unchanged"
-            : outcome.status === "managed"
-              ? "unchanged"
-              : outcome.status === "failed"
-                ? "failed"
-                : outcome.replaced
-                  ? "updated"
-                  : "installed",
-        detail:
-          outcome.status === "failed" || outcome.status === "managed"
-            ? outcome.reason
-            : undefined,
+        status: "manual",
+        detail: detection.spec.instruction,
       };
       continue;
     }
-    results[i] = writeClient(
-      detection,
-      entryFor(detection.spec, prefix, process.execPath),
-      options.dryRun,
-    );
+    if (detection.spec.kind === "cli") {
+      results[i] = installViaCli(detection.spec, detection.configPath, options.dryRun);
+      continue;
+    }
+    results[i] = writeClient(detection, entryFor(detection.spec), options.dryRun);
   }
 
   process.stdout.write(`${renderSummary(results, options.dryRun)}\n\n`);
@@ -353,26 +392,28 @@ export async function runInstall(args: string[]): Promise<number> {
     return 0;
   }
 
-  if (options.auth) {
-    const token = await getStoredToken();
-    if (token) {
-      process.stdout.write("  Already signed in.\n\n");
-    } else {
-      const code = await runAuth();
-      if (code !== 0) {
-        process.stdout.write("\n  Configured, but not signed in. Run: stashwise auth\n\n");
-        return code;
-      }
-    }
-  }
+  // No token is needed any more. The hosted server authenticates each client
+  // over OAuth, so the first time a tool connects it opens a browser and the
+  // reader approves it there. Signing in here would store a credential that
+  // nothing consumes, except the terminal search and the optional prompt hook
+  // below, which is why `stashwise auth` still exists and is no longer run for
+  // you.
+  process.stdout.write(
+    "  Each tool will ask you to approve Stashwise in your browser the first\n" +
+      "  time it connects. Nothing is stored on this machine.\n",
+  );
 
   const configuredClaude = results.some(
     (r) => r.id === "claude-code" && (r.status === "installed" || r.status === "updated"),
   );
   if (options.hook && configuredClaude && !options.yes) {
     const wanted = await ask("\n  Search your library on every Claude Code prompt?");
-    if (wanted) await runHookInstall();
-    else if (!process.stdin.isTTY) {
+    if (wanted) {
+      // The hook runs locally and reads the library through this package, so
+      // unlike the MCP servers above it does need a token of its own.
+      if (!(await getStoredToken())) await runAuth();
+      await runHookInstall();
+    } else if (!process.stdin.isTTY) {
       process.stdout.write("  Skipped the prompt hook. Enable it with: stashwise hook install\n");
     }
   }

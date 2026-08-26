@@ -5,7 +5,13 @@ import {
   isStashwiseServerEntry,
   removeServerEntry,
 } from "../src/mcp-config.js";
-import { CLIENTS, detectClients, entryFor, guiPath, type PathEnv } from "../src/clients.js";
+import {
+  CLIENTS,
+  HOSTED_MCP_URL,
+  detectClients,
+  entryFor,
+  type PathEnv,
+} from "../src/clients.js";
 import { renderSummary, type ClientResult } from "../src/install.js";
 import { classifyJson } from "../src/config-file.js";
 
@@ -216,37 +222,72 @@ describe("detecting what is installed", () => {
 });
 
 describe("the entry each client gets", () => {
-  it("gives GUI clients a PATH they can actually use", () => {
-    // An app launched from the Dock has no shell PATH, so a bare `npx` is not
-    // resolvable. This is the difference between working and silently not.
-    const cursor = CLIENTS.find((c) => c.id === "cursor")!;
-    const entry = entryFor(cursor, "/Users/x/.stashwise", "/opt/node/bin/node");
-    expect((entry.env as Record<string, string>).PATH).toContain("/opt/node/bin");
-  });
-
-  it("leaves terminal clients their own PATH", () => {
-    const claude = CLIENTS.find((c) => c.id === "claude-code")!;
-    const entry = entryFor(claude, "/Users/x/.stashwise", "/opt/node/bin/node");
-    expect(entry.env).toBeUndefined();
-  });
-
-  it("keeps --prefix, which is load bearing", () => {
-    const claude = CLIENTS.find((c) => c.id === "claude-code")!;
-    const entry = entryFor(claude, "/Users/x/.stashwise", "/opt/node/bin/node");
-    expect(entry.args).toContain("--prefix");
-  });
-
-  it("tracks @latest so a rerun is the upgrade path", () => {
-    const claude = CLIENTS.find((c) => c.id === "claude-code")!;
-    expect((entry(claude) as string[]).join(" ")).toContain("@stashwiseapp/mcp@latest");
-    function entry(spec: typeof claude) {
-      return entryFor(spec, "/p", "/n").args;
+  // These used to assert an npx command: a --prefix that was load bearing, an
+  // @latest that made a rerun the upgrade path, and a PATH baked in so an app
+  // launched from the Dock could still find node. All of it existed to run a
+  // server on the user's machine, and none of it survives pointing them at a
+  // hosted one. Nothing to resolve, nothing to keep current, nothing to find.
+  it("is the hosted address, for everyone", () => {
+    for (const spec of CLIENTS) {
+      expect(entryFor(spec).url).toBe(HOSTED_MCP_URL);
     }
   });
 
-  it("builds a PATH without leaking the caller's own", () => {
-    expect(guiPath("/opt/node/bin/node")).not.toContain("/Users/x/some/project");
-    expect(guiPath("/opt/node/bin/node").split(":")[0]).toBe("/opt/node/bin");
+  it("names the transport where the client expects it named", () => {
+    const vscode = CLIENTS.find((c) => c.id === "vscode")!;
+    const cursor = CLIENTS.find((c) => c.id === "cursor")!;
+    expect(entryFor(vscode)).toEqual({ type: "http", url: HOSTED_MCP_URL });
+    // Cursor infers the transport from the presence of a url.
+    expect(entryFor(cursor)).toEqual({ url: HOSTED_MCP_URL });
+  });
+
+  it("keeps the trailing slash the server authenticates against", () => {
+    // The server advertises its resource as .../mcp/ and a client refuses to
+    // authenticate when the address it was given differs by so much as this.
+    expect(HOSTED_MCP_URL.endsWith("/mcp/")).toBe(true);
+  });
+
+  it("points at the branded host, not the platform one", () => {
+    // A client checks the address it is handed against the one it dialled, so
+    // this has to be the host that describes itself.
+    expect(HOSTED_MCP_URL).toContain("oauth.stashwise.co");
+    expect(HOSTED_MCP_URL).not.toContain("fly.dev");
+  });
+
+  it("carries no credential", () => {
+    // Sign in happens in the client's own browser flow. Anything token shaped
+    // in a config file we write would be a secret we put on disk.
+    for (const spec of CLIENTS) {
+      const json = JSON.stringify(entryFor(spec));
+      expect(json).not.toMatch(/token|bearer|authorization|sw_at_/i);
+    }
+  });
+});
+
+describe("who registers themselves", () => {
+  it("delegates to the three clients that ship an mcp command", () => {
+    const delegated = CLIENTS.filter((c) => c.kind === "cli").map((c) => c.id);
+    expect(delegated.sort()).toEqual(["claude-code", "codex", "gemini-cli"]);
+  });
+
+  it("gives instructions rather than writing a file it cannot verify", () => {
+    // Claude Desktop's config had no mcpServers key at all and its remote
+    // connectors are added in the app. Writing a key we have never seen it read
+    // would be pretending we had done something.
+    const manual = CLIENTS.filter((c) => c.kind === "manual");
+    expect(manual.map((c) => c.id).sort()).toEqual(["claude-desktop", "windsurf"]);
+    for (const spec of manual) {
+      expect((spec as { instruction: string }).instruction).toBeTruthy();
+    }
+  });
+
+  it("asks each client for http, not stdio", () => {
+    for (const spec of CLIENTS) {
+      if (spec.kind !== "cli") continue;
+      const args = spec.addArgs(HOSTED_MCP_URL).join(" ");
+      expect(args).toContain(HOSTED_MCP_URL);
+      expect(args).not.toContain("npx");
+    }
   });
 });
 

@@ -4,10 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { installCodex, uninstallCodex, type CodexRunner } from "../src/codex-mcp.js";
 
-const ARGV = {
-  command: "npx",
-  args: ["-y", "--prefix", "/Users/x/.stashwise", "--package", "@stashwiseapp/mcp@latest", "stashwise"],
-};
+const URL_ = "https://oauth.stashwise.co/mcp";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -68,11 +65,11 @@ describe("delegating Codex to its own CLI", () => {
   it("adds the server on a clean machine, then confirms Codex accepted it", () => {
     const configPath = scratchConfig();
     const codex = fakeCodex({});
-    const result = installCodex(ARGV, { configPath, codex });
+    const result = installCodex(URL_, { configPath, codex });
     expect(result.status).toBe("installed");
     expect(codex.calls).toEqual([
       "mcp list --json",
-      `mcp add stashwise -- ${ARGV.command} ${ARGV.args.join(" ")}`,
+      `mcp add stashwise --url ${URL_}`,
       "mcp get stashwise --json",
     ]);
   });
@@ -80,9 +77,9 @@ describe("delegating Codex to its own CLI", () => {
   it("does nothing at all when the entry is already right", () => {
     const configPath = scratchConfig(CONFIG_WITH_OURS);
     const codex = fakeCodex({
-      list: [{ name: "stashwise", transport: { command: ARGV.command, args: ARGV.args } }],
+      list: [{ name: "stashwise", transport: { url: URL_ } }],
     });
-    const result = installCodex(ARGV, { configPath, codex });
+    const result = installCodex(URL_, { configPath, codex });
     expect(result.status).toBe("unchanged");
     expect(codex.calls).toEqual(["mcp list --json"]);
   });
@@ -92,16 +89,16 @@ describe("delegating Codex to its own CLI", () => {
     const codex = fakeCodex({
       list: [{ name: "stashwise", transport: { command: "npx", args: ["-y", "@stashwiseapp/mcp@0.3.0"] } }],
     });
-    installCodex(ARGV, { configPath, codex });
+    installCodex(URL_, { configPath, codex });
     expect(codex.calls[1]).toBe("mcp remove stashwise");
   });
 
   it("migrates a hosted url entry to the local server", () => {
     const configPath = scratchConfig(CONFIG_WITH_OURS);
     const codex = fakeCodex({
-      list: [{ name: "stashwise", transport: { url: "https://oauth.stashwise.co/mcp" } }],
+      list: [{ name: "stashwise", transport: { url: "https://stashwise-api.fly.dev/mcp/" } }],
     });
-    const result = installCodex(ARGV, { configPath, codex });
+    const result = installCodex(URL_, { configPath, codex });
     expect(result.status).toBe("installed");
     expect(codex.calls).toContain("mcp remove stashwise");
   });
@@ -110,7 +107,7 @@ describe("delegating Codex to its own CLI", () => {
     const configPath = scratchConfig();
     const before = readFileSync(configPath, "utf8");
     const codex = fakeCodex({});
-    installCodex(ARGV, { configPath, codex, dryRun: true });
+    installCodex(URL_, { configPath, codex, dryRun: true });
     expect(codex.calls).toEqual(["mcp list --json"]);
     expect(readFileSync(configPath, "utf8")).toBe(before);
   });
@@ -124,7 +121,7 @@ describe("delegating Codex to its own CLI", () => {
       configPath,
       onAdd: (path) => writeFileSync(path, '[mcp_servers.stashwise]\ncommand = "npx"\n'),
     });
-    const result = installCodex(ARGV, { configPath, codex });
+    const result = installCodex(URL_, { configPath, codex });
     expect(result.status).toBe("failed");
     expect(result).toMatchObject({ reason: expect.stringContaining("restored") });
     // Everything the user had is back.
@@ -140,7 +137,7 @@ describe("delegating Codex to its own CLI", () => {
       onAdd: (path) =>
         writeFileSync(path, `${REAL_CONFIG}\n[mcp_servers.stashwise]\ncommand = "npx"\n`),
     });
-    const result = installCodex(ARGV, { configPath, codex });
+    const result = installCodex(URL_, { configPath, codex });
     expect(result.status).toBe("installed");
     expect(readFileSync(configPath, "utf8")).toContain("# a note I wrote to myself");
   });
@@ -156,7 +153,7 @@ describe("a server the Codex plugin provides", () => {
     const codex = fakeCodex({
       list: [{ name: "stashwise", transport: { url: "https://stashwise-api.fly.dev/mcp/" } }],
     });
-    const result = installCodex(ARGV, { configPath, codex });
+    const result = installCodex(URL_, { configPath, codex });
     expect(result.status).toBe("managed");
     expect(codex.calls).toEqual(["mcp list --json"]);
   });
