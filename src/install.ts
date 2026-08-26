@@ -153,17 +153,33 @@ const MARK: Record<Status, string> = {
   failed: "x",
 };
 
-export function renderSummary(results: ClientResult[]): string {
+/** Statuses that assert something changed on disk. */
+const CHANGED: Status[] = ["installed", "updated"];
+
+/**
+ * The summary table.
+ *
+ * The dry run marker is added here, once, rather than by each writer. Three
+ * separate bugs came from asking every code path to remember to say it: the
+ * Codex row claimed a plain "installed" beside rows that admitted they were
+ * hypothetical, and uninstall's preview was byte identical to the real thing.
+ * A dry run's only product is its output, so an unmarked row is not a cosmetic
+ * slip, it is the whole failure.
+ */
+export function renderSummary(results: ClientResult[], dryRun = false): string {
   const lines: string[] = [];
   const width = Math.max(...results.map((r) => r.label.length), 0);
   for (const result of results) {
-    const detail = result.detail ? `  ${result.detail}` : "";
-    lines.push(`  ${MARK[result.status]}  ${result.label.padEnd(width)}  ${result.status}${detail}`);
+    const marker = dryRun && CHANGED.includes(result.status) ? "dry run" : "";
+    const detail = [result.detail, marker].filter(Boolean).join("  ");
+    lines.push(
+      `  ${MARK[result.status]}  ${result.label.padEnd(width)}  ${result.status}${detail ? `  ${detail}` : ""}`,
+    );
   }
   const restart = results
     .filter((r) => r.restartRequired && (r.status === "installed" || r.status === "updated"))
     .map((r) => r.label);
-  if (restart.length) {
+  if (restart.length && !dryRun) {
     const named =
       restart.length === 1
         ? restart[0]
@@ -199,7 +215,7 @@ function writeClient(
   }
   if (!merged.changed) return { ...base, status: "unchanged" };
   if (dryRun) {
-    return { ...base, status: merged.action === "created" ? "installed" : "updated", detail: "dry run" };
+    return { ...base, status: merged.action === "created" ? "installed" : "updated" };
   }
   try {
     // No rootDir guard here on purpose. Detection is the gate that stops us
@@ -246,7 +262,9 @@ export async function runInstall(args: string[]): Promise<number> {
   }).filter((d) => !options.only || options.only.includes(d.spec.id));
 
   const present = detections.filter((d) => d.installed);
-  process.stdout.write("\nStashwise install\n\n");
+  process.stdout.write(
+    options.dryRun ? "\nStashwise install (dry run)\n\n" : "\nStashwise install\n\n",
+  );
   if (present.length === 0) {
     process.stdout.write("  No supported AI tools found on this machine.\n\n");
     return 0;
@@ -328,7 +346,7 @@ export async function runInstall(args: string[]): Promise<number> {
     );
   }
 
-  process.stdout.write(`${renderSummary(results)}\n\n`);
+  process.stdout.write(`${renderSummary(results, options.dryRun)}\n\n`);
 
   if (options.dryRun) {
     process.stdout.write("  Dry run: nothing was written.\n\n");
@@ -379,7 +397,9 @@ export async function runUninstall(args: string[]): Promise<number> {
         .some((dir) => dir && existsSync(join(dir, bin))),
   }).filter((d) => d.installed);
 
-  process.stdout.write("\nRemoving Stashwise\n\n");
+  process.stdout.write(
+    parsed.dryRun ? "\nRemoving Stashwise (dry run)\n\n" : "\nRemoving Stashwise\n\n",
+  );
   for (const detection of detections) {
     // Codex wrote its own config, so it removes its own entry. Editing the
     // TOML ourselves here would carry every risk the install path avoids.
@@ -403,6 +423,10 @@ export async function runUninstall(args: string[]): Promise<number> {
     }
     process.stdout.write(`  - ${detection.spec.label}\n`);
   }
-  process.stdout.write("\n  Done. Your saved library is untouched.\n\n");
+  process.stdout.write(
+    parsed.dryRun
+      ? "\n  Dry run: nothing was removed. Your saved library is untouched either way.\n\n"
+      : "\n  Done. Your saved library is untouched.\n\n",
+  );
   return 0;
 }

@@ -6,6 +6,7 @@ import {
   removeServerEntry,
 } from "../src/mcp-config.js";
 import { CLIENTS, detectClients, entryFor, guiPath, type PathEnv } from "../src/clients.js";
+import { renderSummary, type ClientResult } from "../src/install.js";
 import { classifyJson } from "../src/config-file.js";
 
 const ENV: PathEnv = { home: "/Users/x", platform: "darwin" };
@@ -295,5 +296,54 @@ describe("a tool that is installed but never configured", () => {
     );
     expect(found?.installed).toBe(true);
     expect(found?.configPath).toBe("/Users/x/.gemini/settings.json");
+  });
+});
+
+describe("a dry run has to look like one", () => {
+  // Three bugs came from asking each code path to remember to say "dry run":
+  // the Codex row reported a plain "installed" beside rows that admitted they
+  // were hypothetical, and uninstall's preview was byte identical to the real
+  // thing. A dry run's only product is its output, so an unmarked row is not a
+  // cosmetic slip, it is the entire failure. One place decides now, and this
+  // holds it there.
+  const results: ClientResult[] = [
+    { id: "claude-code", label: "Claude Code", status: "installed", restartRequired: false },
+    { id: "cursor", label: "Cursor", status: "updated", restartRequired: true },
+    { id: "codex", label: "Codex CLI", status: "installed", restartRequired: false },
+    { id: "vscode", label: "VS Code", status: "absent", restartRequired: true },
+    { id: "gemini-cli", label: "Gemini CLI", status: "unchanged", restartRequired: false },
+  ];
+
+  it("marks every row that claims a change, whichever writer produced it", () => {
+    const out = renderSummary(results, true);
+    for (const line of out.split("\n")) {
+      if (/installed|updated/.test(line)) {
+        expect(line, `unmarked: ${line}`).toContain("dry run");
+      }
+    }
+  });
+
+  it("does not mark rows that changed nothing", () => {
+    const out = renderSummary(results, true).split("\n");
+    expect(out.find((l) => l.includes("absent"))).not.toContain("dry run");
+    expect(out.find((l) => l.includes("unchanged"))).not.toContain("dry run");
+  });
+
+  it("says nothing about restarting, since nothing was written", () => {
+    expect(renderSummary(results, true)).not.toContain("Restart");
+    expect(renderSummary(results, false)).toContain("Restart Cursor");
+  });
+
+  it("leaves a real run unmarked", () => {
+    expect(renderSummary(results, false)).not.toContain("dry run");
+  });
+
+  it("keeps a writer's own detail alongside the marker", () => {
+    const withDetail: ClientResult[] = [
+      { id: "cursor", label: "Cursor", status: "updated", detail: "replaced 2 entries", restartRequired: true },
+    ];
+    const line = renderSummary(withDetail, true);
+    expect(line).toContain("replaced 2 entries");
+    expect(line).toContain("dry run");
   });
 });
