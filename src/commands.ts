@@ -16,3 +16,6 @@ export const STASHWISE_AUTH_COMMAND = `${STASHWISE_BIN} auth`;
 export const STASHWISE_SEARCH_COMMAND = `${STASHWISE_BIN} search`;
 export const STASHWISE_DOCTOR_COMMAND = `${STASHWISE_BIN} doctor`;
 export const STASHWISE_HOOK_COMMAND = `${STASHWISE_BIN} hook`;
+
+/** The one line the homepage prints. */
+export const STASHWISE_INSTALL_COMMAND = `npx -y ${STASHWISE_MCP_PACKAGE_SPEC.replace(/@latest$/, "")} install`;
