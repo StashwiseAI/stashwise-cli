@@ -33,7 +33,7 @@ import {
   type PathEnv,
 } from "./clients.js";
 import { readJsonConfig, writeJsonConfig } from "./config-file.js";
-import { installCodex } from "./codex-mcp.js";
+import { installCodex, uninstallCodex } from "./codex-mcp.js";
 import { npxPrefixDir, runHookInstall } from "./hook-install.js";
 import { getStoredToken } from "./keychain.js";
 import { installServerEntry, removeServerEntry } from "./mcp-config.js";
@@ -302,12 +302,17 @@ export async function runInstall(args: string[]): Promise<number> {
         status:
           outcome.status === "unchanged"
             ? "unchanged"
-            : outcome.status === "failed"
-              ? "failed"
-              : outcome.replaced
-                ? "updated"
-                : "installed",
-        detail: outcome.status === "failed" ? outcome.reason : undefined,
+            : outcome.status === "managed"
+              ? "unchanged"
+              : outcome.status === "failed"
+                ? "failed"
+                : outcome.replaced
+                  ? "updated"
+                  : "installed",
+        detail:
+          outcome.status === "failed" || outcome.status === "managed"
+            ? outcome.reason
+            : undefined,
       };
       continue;
     }
@@ -363,11 +368,25 @@ export async function runUninstall(args: string[]): Promise<number> {
   const env: PathEnv = { home: homedir(), platform: process.platform, appData: process.env.APPDATA };
   const detections = detectClients(env, {
     exists: existsSync,
-    onPath: () => false,
-  }).filter((d) => d.installed && d.spec.kind === "json");
+    onPath: (bin) =>
+      (process.env.PATH ?? "")
+        .split(delimiter)
+        .some((dir) => dir && existsSync(join(dir, bin))),
+  }).filter((d) => d.installed);
 
   process.stdout.write("\nRemoving Stashwise\n\n");
   for (const detection of detections) {
+    // Codex wrote its own config, so it removes its own entry. Editing the
+    // TOML ourselves here would carry every risk the install path avoids.
+    if (detection.spec.kind === "cli") {
+      const { removed, reason } = uninstallCodex({
+        configPath: detection.configPath ?? "",
+        dryRun: parsed.dryRun,
+      });
+      if (removed) process.stdout.write(`  - ${detection.spec.label}\n`);
+      else if (reason) process.stdout.write(`  ! ${detection.spec.label}: ${reason}\n`);
+      continue;
+    }
     const path = detection.configPath;
     if (!path) continue;
     const read = readJsonConfig(path);

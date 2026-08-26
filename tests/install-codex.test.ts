@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { installCodex, type CodexRunner } from "../src/codex-mcp.js";
+import { installCodex, uninstallCodex, type CodexRunner } from "../src/codex-mcp.js";
 
 const ARGV = {
   command: "npx",
@@ -27,6 +27,13 @@ enabled = true
 # a note I wrote to myself
 [mcp_servers.buffer]
 url = "https://mcp.buffer.com/mcp"
+`;
+
+/** The same config, with our server actually declared in it. */
+const CONFIG_WITH_OURS = `${REAL_CONFIG}
+[mcp_servers.stashwise]
+command = "npx"
+args = ["-y", "@stashwiseapp/mcp@0.3.0"]
 `;
 
 function scratchConfig(body = REAL_CONFIG): string {
@@ -71,7 +78,7 @@ describe("delegating Codex to its own CLI", () => {
   });
 
   it("does nothing at all when the entry is already right", () => {
-    const configPath = scratchConfig();
+    const configPath = scratchConfig(CONFIG_WITH_OURS);
     const codex = fakeCodex({
       list: [{ name: "stashwise", transport: { command: ARGV.command, args: ARGV.args } }],
     });
@@ -81,7 +88,7 @@ describe("delegating Codex to its own CLI", () => {
   });
 
   it("removes before adding when an older entry is there", () => {
-    const configPath = scratchConfig();
+    const configPath = scratchConfig(CONFIG_WITH_OURS);
     const codex = fakeCodex({
       list: [{ name: "stashwise", transport: { command: "npx", args: ["-y", "@stashwiseapp/mcp@0.3.0"] } }],
     });
@@ -90,7 +97,7 @@ describe("delegating Codex to its own CLI", () => {
   });
 
   it("migrates a hosted url entry to the local server", () => {
-    const configPath = scratchConfig();
+    const configPath = scratchConfig(CONFIG_WITH_OURS);
     const codex = fakeCodex({
       list: [{ name: "stashwise", transport: { url: "https://oauth.stashwise.co/mcp" } }],
     });
@@ -136,5 +143,38 @@ describe("delegating Codex to its own CLI", () => {
     const result = installCodex(ARGV, { configPath, codex });
     expect(result.status).toBe("installed");
     expect(readFileSync(configPath, "utf8")).toContain("# a note I wrote to myself");
+  });
+});
+
+describe("a server the Codex plugin provides", () => {
+  // Found by running this against a real machine. `codex mcp list` includes
+  // servers that come from an installed plugin, and those are not in
+  // config.toml, cannot be removed by `codex mcp remove`, and must not be
+  // duplicated by a second entry of the same name.
+  it("is left alone rather than duplicated", () => {
+    const configPath = scratchConfig(); // no [mcp_servers.stashwise] block
+    const codex = fakeCodex({
+      list: [{ name: "stashwise", transport: { url: "https://stashwise-api.fly.dev/mcp/" } }],
+    });
+    const result = installCodex(ARGV, { configPath, codex });
+    expect(result.status).toBe("managed");
+    expect(codex.calls).toEqual(["mcp list --json"]);
+  });
+
+  it("is not reported as removed by uninstall", () => {
+    const configPath = scratchConfig();
+    const codex = fakeCodex({
+      list: [{ name: "stashwise", transport: { url: "https://stashwise-api.fly.dev/mcp/" } }],
+    });
+    const result = uninstallCodex({ configPath, codex });
+    expect(result.removed).toBe(false);
+    expect(result.reason).toMatch(/plugin/);
+  });
+
+  it("uninstall removes what config.toml does declare", () => {
+    const configPath = scratchConfig(CONFIG_WITH_OURS);
+    const codex = fakeCodex({ list: [{ name: "stashwise", transport: { command: "npx" } }] });
+    expect(uninstallCodex({ configPath, codex }).removed).toBe(true);
+    expect(codex.calls).toContain("mcp remove stashwise");
   });
 });

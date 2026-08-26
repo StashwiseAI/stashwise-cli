@@ -29,6 +29,7 @@ export const realCodex: CodexRunner = {
 export type CodexOutcome =
   | { status: "unchanged" }
   | { status: "installed"; replaced: boolean; backupPath: string | null }
+  | { status: "managed"; reason: string }
   | { status: "failed"; reason: string };
 
 /** Lines outside our own block, which must survive whatever Codex does. */
@@ -41,6 +42,23 @@ function foreignLines(raw: string): string[] {
     if (!inOurBlock && line.trim() !== "") out.push(line);
   }
   return out;
+}
+
+/**
+ * Does config.toml itself declare our server?
+ *
+ * The discriminator that `codex mcp list` cannot give us. A Codex plugin can
+ * provide a server of the same name, and that one is the plugin's: it is not in
+ * config.toml, `codex mcp remove` cannot take it, and adding our own beside it
+ * would put two servers called stashwise in front of the model.
+ *
+ * Reading the file is safe. It is writing it that we refuse to do.
+ */
+function declaredInConfig(configPath: string): boolean {
+  if (!configPath || !existsSync(configPath)) return false;
+  return /^\s*\[+\s*mcp_servers\.["']?stashwise["']?\s*\]/m.test(
+    readFileSync(configPath, "utf8"),
+  );
 }
 
 function existing(codex: CodexRunner): { present: boolean; matches: boolean; entry: unknown } {
@@ -72,6 +90,13 @@ export function installCodex(
 ): CodexOutcome {
   const codex = options.codex ?? realCodex;
   const found = existing(codex);
+  const owned = declaredInConfig(options.configPath);
+
+  if (found.present && !owned) {
+    // Provided by the Stashwise Codex plugin. Adding ours beside it would give
+    // the model two servers with the same name and no way to tell them apart.
+    return { status: "managed", reason: "already provided by the Codex plugin" };
+  }
 
   const desired = [argv.command, ...argv.args].join(" ");
   if (found.present) {
@@ -96,7 +121,7 @@ export function installCodex(
   }
 
   try {
-    if (found.present) codex.run(["mcp", "remove", "stashwise"]);
+    if (owned) codex.run(["mcp", "remove", "stashwise"]);
     codex.run(["mcp", "add", "stashwise", "--", argv.command, ...argv.args]);
   } catch (err) {
     return { status: "failed", reason: err instanceof Error ? err.message : String(err) };
@@ -123,4 +148,27 @@ export function installCodex(
     return { status: "failed", reason: `codex did not accept the entry: ${String(err)}` };
   }
   return { status: "installed", replaced: found.present, backupPath };
+}
+
+export function uninstallCodex(options: {
+  configPath: string;
+  codex?: CodexRunner;
+  dryRun?: boolean;
+}): { removed: boolean; reason?: string } {
+  const codex = options.codex ?? realCodex;
+  // Only what config.toml declares is ours to remove. Reporting success for a
+  // plugin's server would be a removal that never happened.
+  if (!declaredInConfig(options.configPath)) {
+    const found = existing(codex);
+    return found.present
+      ? { removed: false, reason: "provided by the Codex plugin; remove it with codex plugin remove" }
+      : { removed: false };
+  }
+  if (options.dryRun) return { removed: true };
+  try {
+    codex.run(["mcp", "remove", "stashwise"]);
+  } catch (err) {
+    return { removed: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+  return { removed: true };
 }
