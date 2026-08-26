@@ -308,6 +308,9 @@ export function probeHookCommand(command: string): Promise<ProbeOutcome> {
 
 
 export async function runHookInstall(): Promise<number> {
+  // Same ENOENT as install hits: `npx --prefix` needs the directory to exist,
+  // and on a first run it does not. Ours to create.
+  mkdirSync(npxPrefixDir(), { recursive: true });
   const path = settingsPath();
   const settings = loadSettings(path);
   if (settings === null) {

@@ -17,6 +17,7 @@
 // character npx incantation on every line.
 
 import { runAuth } from "./auth.js";
+import { runInstall, runUninstall } from "./install.js";
 import {
   STASHWISE_HOOK_COMMAND,
   STASHWISE_MCP_RUN_COMMAND,
@@ -30,6 +31,8 @@ import { VERSION } from "./version.js";
 
 type Mode =
   | "serve"
+  | "install"
+  | "uninstall"
   | "auth"
   | "search"
   | "doctor"
@@ -41,6 +44,8 @@ type Mode =
 function parseMode(argv: string[]): Mode {
   const raw = (argv[2] ?? "").toLowerCase();
   if (!raw) return "serve";
+  if (raw === "install" || raw === "setup") return "install";
+  if (raw === "uninstall") return "uninstall";
   if (raw === "auth" || raw === "login") return "auth";
   if (raw === "search") return "search";
   if (raw === "doctor" || raw === "status") return "doctor";
@@ -68,13 +73,25 @@ function printHelp(): void {
       "Stashwise: search your library and wiki from any AI agent, or your terminal.",
       "",
       "Usage:",
+      "  stashwise install          Find your AI tools, configure them all, and sign in.",
+      "  stashwise uninstall        Remove Stashwise from every tool it configured.",
       "  stashwise                  Start the stdio MCP server (default; what agent hosts spawn).",
       "  stashwise auth             Pair this machine with your Stashwise account.",
       '  stashwise search "..."     Search your library/wiki from the terminal.',
       "  stashwise doctor           Check config, token, and backend reachability.",
       "  stashwise hook install     Register the Claude Code prompt suggestion hook.",
+      "                             (Narrower than `stashwise install`: this is only the",
+      "                             ambient prompt hook, not the MCP server registration.)",
       "  stashwise hook uninstall   Remove the prompt suggestion hook.",
       "  stashwise --version        Print the installed version.",
+      "",
+      "Install flags:",
+      "  --dry-run                  Show every change, write nothing.",
+      "  --only <ids>               Comma separated: claude-code, cursor, codex, vscode,",
+      "                             gemini-cli, claude-desktop, windsurf.",
+      "  --no-auth                  Configure the tools, skip signing in.",
+      "  --no-hook                  Do not offer the Claude Code prompt hook.",
+      "  --force                    Configure even if the server failed to start.",
       "",
       "Search flags:",
       "  --scope library|wiki|all   Limit the search surface (default: all).",
@@ -106,6 +123,12 @@ async function main(): Promise<void> {
   let exitCode = 0;
 
   switch (mode) {
+    case "install":
+      exitCode = await runInstall(process.argv.slice(3));
+      break;
+    case "uninstall":
+      exitCode = await runUninstall(process.argv.slice(3));
+      break;
     case "auth":
       exitCode = await runAuth();
       break;

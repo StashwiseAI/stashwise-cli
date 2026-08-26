@@ -54,7 +54,47 @@ That second step is the point. The automatic check only sees your raw prompt, so
 
 ## Install
 
-### Hosted integration (recommended)
+### One command (recommended)
+
+```bash
+npx -y @stashwiseapp/mcp install
+```
+
+It finds the AI tools already on your machine, writes each one's MCP config, and
+signs you in once. The token is shared, so nothing asks again.
+
+```console
+❯ npx -y @stashwiseapp/mcp install
+
+  Checking the server starts...
+    ok, version 0.6.0
+    ok under a desktop app's PATH
+
+  +  Claude Code     installed
+  +  Cursor          installed
+  +  Codex CLI       installed
+  .  Windsurf        absent
+
+  Restart Cursor to pick up the change.
+```
+
+Currently configures Claude Code, Cursor, Codex CLI, VS Code, Gemini CLI,
+Claude Desktop and Windsurf. A tool that is not installed is skipped, not an
+error. Rerun it any time: it is idempotent, and rerunning is how you upgrade.
+
+Useful flags: `--dry-run` shows every change and writes nothing, `--only <ids>`
+narrows it to named tools, `--no-auth` skips signing in, and `stashwise
+uninstall` removes what it added.
+
+Two things it deliberately will not do. It never creates a config directory for
+a tool you do not have, so it cannot litter. And if a config file contains
+comments, it tells you where to paste rather than reformatting your file to
+make room for itself.
+
+Cloud assistants like ChatGPT run on someone else's machine and cannot be
+configured from yours; use the hosted endpoint below for those.
+
+### Hosted integration
 
 Codex, Cursor, and Claude can connect directly to the hosted Stashwise MCP endpoint:
 
