@@ -282,3 +282,18 @@ describe("classifying a config file", () => {
     expect(result.error).toBeTruthy();
   });
 });
+
+describe("a tool that is installed but never configured", () => {
+  // Found by running the published package as a new user. Gemini CLI was on
+  // PATH with no ~/.gemini directory: the dry run said "installed" and the real
+  // run failed with "that client is not installed", which cannot both be true.
+  // Detection is the gate; a missing config directory for a tool we found is
+  // the ordinary case of someone who has never configured MCP in it.
+  it("is detected from its binary alone", () => {
+    const found = detectClients(ENV, probe([], ["gemini"])).find(
+      (d) => d.spec.id === "gemini-cli",
+    );
+    expect(found?.installed).toBe(true);
+    expect(found?.configPath).toBe("/Users/x/.gemini/settings.json");
+  });
+});

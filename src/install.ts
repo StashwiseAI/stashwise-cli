@@ -202,8 +202,13 @@ function writeClient(
     return { ...base, status: merged.action === "created" ? "installed" : "updated", detail: "dry run" };
   }
   try {
+    // No rootDir guard here on purpose. Detection is the gate that stops us
+    // littering onto a machine without the tool, and by this point it has
+    // already said yes. A client found by its binary may legitimately have no
+    // config directory yet, which is the ordinary case of someone who has the
+    // tool but has never configured an MCP server in it; refusing that would
+    // report "not installed" for something we just found.
     writeJsonConfig(configPath, merged.doc, {
-      rootDir: detection.rootDir ?? undefined,
       mode: read.mode,
       indent: read.indent,
     });
