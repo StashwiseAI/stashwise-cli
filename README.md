@@ -60,19 +60,20 @@ That second step is the point. The automatic check only sees your raw prompt, so
 npx -y @stashwiseapp/mcp install
 ```
 
-It finds the AI tools already on your machine, writes each one's MCP config, and
-signs you in once. The token is shared, so nothing asks again.
+It finds the AI tools already on your machine and points each one at the hosted
+Stashwise server. Nothing runs locally, nothing is stored on your machine, and
+each tool asks you to approve it in the browser the first time it connects.
 
 ```console
 ❯ npx -y @stashwiseapp/mcp install
 
-  Checking the server starts...
-    ok, version 0.6.0
-    ok under a desktop app's PATH
+  Checking the Stashwise server...
+    reachable, and asks for sign in
 
   +  Claude Code     installed
   +  Cursor          installed
   +  Codex CLI       installed
+  !  Claude Desktop  manual  Settings, Connectors, Add custom connector
   .  Windsurf        absent
 
   Restart Cursor to pick up the change.
@@ -86,10 +87,12 @@ Useful flags: `--dry-run` shows every change and writes nothing, `--only <ids>`
 narrows it to named tools, `--no-auth` skips signing in, and `stashwise
 uninstall` removes what it added.
 
-Two things it deliberately will not do. It never creates a config directory for
-a tool you do not have, so it cannot litter. And if a config file contains
-comments, it tells you where to paste rather than reformatting your file to
-make room for itself.
+Three things it deliberately will not do. It never creates a config directory
+for a tool you do not have, so it cannot litter. If a config file contains
+comments, it tells you where to paste rather than reformatting your file. And
+where a client has no config we can safely write, such as Claude Desktop, it
+gives you the instruction rather than writing a key it has never seen that
+client read.
 
 Cloud assistants like ChatGPT run on someone else's machine and cannot be
 configured from yours; use the hosted endpoint below for those.

@@ -57,9 +57,20 @@ export interface CliClientSpec extends BaseSpec {
   /** The client owns its own config writer, so we drive that instead. */
   bin: string;
   configPath(env: PathEnv): string | null;
+  /** Its own way of registering a remote server. */
+  addArgs(url: string): string[];
+  listArgs: string[];
+  removeArgs: string[];
 }
 
-export type ClientSpec = JsonClientSpec | CliClientSpec;
+/** No file we can safely write and no CLI, so the honest answer is instructions. */
+export interface ManualClientSpec extends BaseSpec {
+  kind: "manual";
+  configPath(env: PathEnv): string | null;
+  instruction: string;
+}
+
+export type ClientSpec = JsonClientSpec | CliClientSpec | ManualClientSpec;
 
 export type ClientId =
   | "claude-code"
@@ -91,15 +102,22 @@ function claudeDesktopDir(env: PathEnv): string | null {
 }
 
 export const CLIENTS: ClientSpec[] = [
+  // Claude Code, Codex and Gemini each ship an `mcp add` that speaks http, so
+  // they register their own server. Delegating means the client validates what
+  // it wrote and we never reformat a file it owns: ~/.claude.json alone is
+  // 168KB of state a live session rewrites at will.
   {
     id: "claude-code",
     label: "Claude Code",
-    kind: "json",
+    kind: "cli",
+    bin: "claude",
     launch: "terminal",
     binaries: ["claude"],
     rootDir: (env) => env.home,
     configPath: (env) => join(env.home, ".claude.json"),
-    containerKey: "mcpServers",
+    addArgs: (url) => ["mcp", "add", "--transport", "http", "-s", "user", "stashwise", url],
+    listArgs: ["mcp", "list"],
+    removeArgs: ["mcp", "remove", "-s", "user", "stashwise"],
     restartRequired: false,
     verified: true,
   },
@@ -124,6 +142,9 @@ export const CLIENTS: ClientSpec[] = [
     binaries: ["codex"],
     rootDir: (env) => join(env.home, ".codex"),
     configPath: (env) => join(env.home, ".codex", "config.toml"),
+    addArgs: (url) => ["mcp", "add", "stashwise", "--url", url],
+    listArgs: ["mcp", "list", "--json"],
+    removeArgs: ["mcp", "remove", "stashwise"],
     restartRequired: false,
     verified: true,
   },
@@ -146,19 +167,22 @@ export const CLIENTS: ClientSpec[] = [
   {
     id: "gemini-cli",
     label: "Gemini CLI",
-    kind: "json",
+    kind: "cli",
+    bin: "gemini",
     launch: "terminal",
     binaries: ["gemini"],
     rootDir: (env) => join(env.home, ".gemini"),
     configPath: (env) => join(env.home, ".gemini", "settings.json"),
-    containerKey: "mcpServers",
+    addArgs: (url) => ["mcp", "add", "-s", "user", "-t", "http", "stashwise", url],
+    listArgs: ["mcp", "list"],
+    removeArgs: ["mcp", "remove", "-s", "user", "stashwise"],
     restartRequired: false,
     verified: true,
   },
   {
     id: "claude-desktop",
     label: "Claude Desktop",
-    kind: "json",
+    kind: "manual",
     launch: "gui",
     binaries: [],
     rootDir: claudeDesktopDir,
@@ -166,25 +190,24 @@ export const CLIENTS: ClientSpec[] = [
       const dir = claudeDesktopDir(env);
       return dir ? join(dir, "claude_desktop_config.json") : null;
     },
-    containerKey: "mcpServers",
     restartRequired: true,
-    // The installation checked had no mcpServers key at all: recent versions
-    // appear to manage connectors through Settings instead. Writing the key is
-    // additive and harmless, but we do not claim to have proven it is read.
+    // Its config file had no mcpServers key at all, and remote connectors are
+    // added through the app's own Settings. Writing a key we have never seen it
+    // read would be pretending, so this one gets instructions instead.
     verified: false,
-    note: "check Settings, Developer if it does not appear",
+    instruction: "Settings, Connectors, Add custom connector, then paste the URL",
   },
   {
     id: "windsurf",
     label: "Windsurf",
-    kind: "json",
+    kind: "manual",
     launch: "gui",
     binaries: ["windsurf"],
     rootDir: (env) => join(env.home, ".codeium"),
     configPath: (env) => join(env.home, ".codeium", "windsurf", "mcp_config.json"),
-    containerKey: "mcpServers",
     restartRequired: true,
     verified: false,
+    instruction: "add it as a remote MCP server in Windsurf's settings",
   },
 ];
 
@@ -236,38 +259,27 @@ export function guiPath(execPath: string): string {
 }
 
 /**
- * The argv every client is pointed at.
+ * The one address every client is pointed at.
  *
- * `@latest` rather than a pinned version, deliberately diverging from
- * `hookCommand()`. The hook re-resolves on every prompt and is repinned by a
- * later `hook install`, so a pin there is cheap and precise. An MCP entry is
- * written once and never looked at again, so pinning would strand people on
- * whatever version installed them, with no upgrade path short of editing the
- * file by hand. Rerunning install is the upgrade path, and the merge above is
- * idempotent so that is safe.
+ * Hosted, so there is no local process, no Node requirement, no token on disk
+ * and nothing to keep current. It also carries the full tool set, including
+ * saving and note taking, which a locally run server does not have.
  *
- * `--prefix` is kept for the reason set out at length in hook-install.ts:
- * `npm exec --package X@V` fails when the working directory is X at version V,
- * which is exactly the situation of the person developing this package.
+ * Each client signs in through its own browser approval the first time it
+ * connects. That is OAuth, not a choice we made: registration is per client, so
+ * no single sign in can cover several of them.
+ *
+ * The trailing slash is load bearing. The server advertises its resource as
+ * `.../mcp/`, and a client compares the address it was handed against that
+ * exact string before it will authenticate. Dropping the slash produces
+ * "Protected resource does not match expected", which reads like an outage and
+ * is really a typo.
  */
-export function serverArgv(prefixDir: string): { command: string; args: string[] } {
-  return {
-    command: "npx",
-    args: ["-y", "--prefix", prefixDir, "--package", "@stashwiseapp/mcp@latest", "stashwise"],
-  };
-}
+export const HOSTED_MCP_URL = "https://oauth.stashwise.co/mcp/";
 
 /** The config entry for one client, in that client's own dialect. */
-export function entryFor(
-  spec: ClientSpec,
-  prefixDir: string,
-  execPath: string,
-): Record<string, unknown> {
-  const { command, args } = serverArgv(prefixDir);
-  const entry: Record<string, unknown> = { command, args };
-  // Claude Code and VS Code both record a transport type; the others infer it.
-  if (spec.id === "claude-code" || spec.id === "vscode") entry.type = "stdio";
-  // Without this, a client launched from the Dock cannot find npx at all.
-  if (spec.launch === "gui") entry.env = { PATH: guiPath(execPath) };
-  return entry;
+export function entryFor(spec: ClientSpec, url: string = HOSTED_MCP_URL): Record<string, unknown> {
+  // VS Code and Claude Code name the transport; Cursor infers it from `url`.
+  if (spec.id === "vscode") return { type: "http", url };
+  return { url };
 }
