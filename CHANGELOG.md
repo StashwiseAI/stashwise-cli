@@ -2,6 +2,40 @@
 
 All notable changes to `@stashwiseapp/mcp`.
 
+## 0.8.0
+
+### `install` now sets up Kimi Code
+
+Kimi Code was the one host `install` did not know, so it was the one host still
+needing a config written by hand. That took three attempts, and every failure
+was silent rather than loud:
+
+- `~/.kimi/mcp.json` belongs to the older `kimi-cli` from the same vendor. Its
+  documentation is what search returns, and Kimi Code reads
+  `~/.kimi-code/mcp.json` instead, ignoring the other file without complaint. A
+  test now fails if that directory name loses its suffix.
+- The binary installs to `~/.kimi-code/bin`, which is usually not on `PATH`, so
+  detection relies on the directory rather than the binary.
+- `kimi doctor` validates `config.toml` and `tui.toml` only. It reports a
+  healthy configuration while saying nothing at all about `mcp.json`.
+
+Kimi Code 0.39.0 ships no `mcp` subcommand, so it is configured by writing its
+file rather than by delegating. `$KIMI_CODE_HOME` is honoured.
+
+### The published endpoint now passes the check clients are supposed to make
+
+The server advertises its resource as `https://oauth.stashwise.co/mcp/`
+whichever host you ask, and RFC 9728 requires a client to compare that string
+against the address it was handed. Claude Code and ChatGPT do not compare.
+**Kimi does, and refuses**, reporting a protected resource mismatch that reads
+like an outage and is really a typo.
+
+`src/clients.ts` already pointed at the right address. The published artifacts
+did not: the plugin's `.mcp.json`, the Cursor integration, and both READMEs
+still named `stashwise-api.fly.dev`, which fails the check. All of them now
+name the address the server actually claims. The trailing slash is part of the
+match; dropping it fails the same way.
+
 ## 0.4.1
 
 ### `hook install` and `doctor` now prove the pinned command actually runs
