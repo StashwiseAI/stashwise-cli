@@ -1,0 +1,31 @@
+{
+  "name": "stashwise",
+  "owner": {
+    "name": "StashwiseAI",
+    "url": "https://stashwise.co"
+  },
+  "description": "Bring your saved Stashwise research into every answer.",
+  "plugins": [
+    {
+      "name": "stashwise",
+      "source": "./plugins/stashwise",
+      "displayName": "Stashwise",
+      "description": "Proactively ground recommendations, strategy, planning, comparisons, research, and recall in the user's private Stashwise saves, even when Stashwise is not mentioned.",
+      "category": "productivity",
+      "tags": [
+        "research",
+        "knowledge-base",
+        "library",
+        "mcp",
+        "citations"
+      ],
+      "author": {
+        "name": "StashwiseAI",
+        "url": "https://stashwise.co"
+      },
+      "homepage": "https://stashwise.co/mcp",
+      "repository": "https://github.com/StashwiseAI/stashwise-cli",
+      "license": "MIT"
+    }
+  ]
+}

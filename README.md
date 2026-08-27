@@ -105,7 +105,26 @@ Codex, Cursor, and Claude can connect directly to the hosted Stashwise MCP endpo
 https://stashwise-api.fly.dev/mcp/
 ```
 
-The hosted connection uses OAuth. Installing the Codex plugin—or adding the URL as a remote MCP connector in Cursor or Claude—opens Stashwise in the browser for approval. It does not require Node, `npx`, an API token, or OS-keychain setup. See [`integrations/`](./integrations/) for the client-specific assets.
+The hosted connection uses OAuth. Installing the Claude Code or Codex plugin, or adding the URL as a remote MCP connector in Cursor or the Claude apps, opens Stashwise in the browser for approval. It does not require Node, `npx`, an API token, or OS-keychain setup. See [`integrations/`](./integrations/) for the client-specific assets.
+
+#### Claude Code
+
+Add the marketplace, then install the plugin:
+
+```text
+/plugin marketplace add StashwiseAI/stashwise-cli
+/plugin install stashwise@stashwise
+```
+
+If the install summary says `Run /reload-plugins to activate.`, run that. Then open `/mcp`, select **stashwise**, and approve access in the browser.
+
+You get one skill (`/stashwise:search-stashwise`), the hosted MCP tools, and an ambient `UserPromptSubmit` hook, for roughly 100 tokens of always-on context. Confirm what a version installs at any time with `claude plugin details stashwise`.
+
+Full setup notes, acceptance checks, and the shell equivalents are in the [integration guide](./integrations/README.md#claude-code).
+
+Choose this path **or** the [local CLI](#local-cli-and-claude-code-hook) below, not both. Each registers its own prompt hook, and Claude Code matches plugin servers against configured ones by endpoint rather than by name, so a hosted plugin server and a local `stashwise` server both load and every tool appears twice.
+
+#### Codex
 
 Install the Codex plugin on macOS or Linux with one command:
 
@@ -128,7 +147,7 @@ stashwise auth
 
 `auth` opens [stashwise.co/cli](https://stashwise.co/cli), you click **Authorize**, and a token lands in your OS keychain (macOS Keychain, Windows Credential Vault, Linux libsecret). On a headless box it also prints a URL and an 8 character code you can enter by hand.
 
-Then wire it into your agent. **Claude Code** gets both surfaces:
+Then wire it into your agent. **Claude Code** gets both surfaces. Skip this if you already installed the plugin above, since the two paths overlap.
 
 ```bash
 claude mcp add -s user stashwise -- stashwise    # the search tool

@@ -177,3 +177,68 @@ describe("skill activation metadata", () => {
     expect(blob).toContain("not mention");
   });
 });
+
+describe("Stashwise Claude Code marketplace", () => {
+  const claudeMarketplacePath = fileURLToPath(
+    new URL("../.claude-plugin/marketplace.json", import.meta.url),
+  );
+  const claudeManifestPath = fileURLToPath(
+    new URL("../plugins/stashwise/.claude-plugin/plugin.json", import.meta.url),
+  );
+  const codexManifestPath = fileURLToPath(
+    new URL("../plugins/stashwise/.codex-plugin/plugin.json", import.meta.url),
+  );
+
+  const readJson = (path: string) =>
+    JSON.parse(readFileSync(path, "utf8")) as Record<string, any>;
+
+  it("catalogs the plugin from inside the marketplace repository", () => {
+    const marketplace = readJson(claudeMarketplacePath);
+
+    expect(marketplace.name).toBe("stashwise");
+    expect(marketplace.owner?.name).toBe("StashwiseAI");
+
+    expect(marketplace.plugins).toHaveLength(1);
+    const [entry] = marketplace.plugins;
+    expect(entry.name).toBe("stashwise");
+    // Claude Code resolves this against the marketplace root, not
+    // .claude-plugin/, and refuses anything that climbs out with "../".
+    expect(entry.source).toBe("./plugins/stashwise");
+  });
+
+  it("ships a manifest that namespaces the skill as stashwise", () => {
+    const manifest = readJson(claudeManifestPath);
+
+    expect(manifest.name).toBe("stashwise");
+    // Skills, hooks and the MCP definition all sit at their auto-detected
+    // default paths. Naming them here can replace the default scan rather
+    // than supplement it, so the manifest stays pure metadata.
+    for (const field of ["skills", "hooks", "mcpServers", "commands", "agents"]) {
+      expect(manifest[field]).toBeUndefined();
+    }
+  });
+
+  it("pins the same version as the Codex manifest", () => {
+    // Both hosts install the same directory, and each pins updates to its own
+    // manifest version. Bumping one alone leaves the other host's users on a
+    // stale cached copy with no error anywhere to show for it.
+    expect(readJson(claudeManifestPath).version).toBe(
+      readJson(codexManifestPath).version,
+    );
+  });
+
+  it("carries routing copy on both surfaces a user reads before installing", () => {
+    const description = readJson(claudeManifestPath).description as string;
+    const entryDescription = readJson(claudeMarketplacePath).plugins[0]
+      .description as string;
+
+    // The catalog entry is what the /plugin Discover tab shows, and the
+    // manifest is what the installed detail view shows. Neither may drift
+    // back into a feature list.
+    expect(entryDescription).toBe(description);
+    for (const blob of [description.toLowerCase()]) {
+      expect(blob).toContain("recommendation");
+      expect(blob).toContain("not mentioned");
+    }
+  });
+});
