@@ -25,6 +25,8 @@ export interface PathEnv {
   platform: NodeJS.Platform;
   /** %APPDATA% on Windows. */
   appData?: string;
+  /** $KIMI_CODE_HOME, which relocates Kimi Code's whole config directory. */
+  kimiCodeHome?: string;
 }
 
 interface BaseSpec {
@@ -78,8 +80,20 @@ export type ClientId =
   | "codex"
   | "vscode"
   | "gemini-cli"
+  | "kimi-code"
   | "claude-desktop"
   | "windsurf";
+
+/**
+ * Kimi Code keeps everything under one directory, relocatable with
+ * $KIMI_CODE_HOME. Note the name: this is `.kimi-code`, not `.kimi`. The older
+ * `kimi-cli` from the same vendor uses `~/.kimi/mcp.json`, its docs are the
+ * ones search engines return, and following them writes a file Kimi Code never
+ * reads.
+ */
+function kimiCodeDir(env: PathEnv): string {
+  return env.kimiCodeHome ?? join(env.home, ".kimi-code");
+}
 
 function vscodeUserDir(env: PathEnv): string | null {
   if (env.platform === "darwin") {
@@ -177,6 +191,25 @@ export const CLIENTS: ClientSpec[] = [
     listArgs: ["mcp", "list"],
     removeArgs: ["mcp", "remove", "-s", "user", "stashwise"],
     restartRequired: false,
+    verified: true,
+  },
+  // Kimi Code ships no `mcp` subcommand (checked against 0.39.0, whose verbs
+  // are export, provider, acp, web, login and doctor), so this one is a file
+  // write rather than a delegation. `kimi doctor` validates config.toml and
+  // tui.toml only, so it will report a healthy config while saying nothing
+  // about mcp.json; `/mcp` inside the TUI is the real check.
+  {
+    id: "kimi-code",
+    label: "Kimi Code",
+    kind: "json",
+    launch: "terminal",
+    // The binary installs to ~/.kimi-code/bin, which is often not on PATH, so
+    // in practice the root directory below is what proves it is installed.
+    binaries: ["kimi"],
+    rootDir: kimiCodeDir,
+    configPath: (env) => join(kimiCodeDir(env), "mcp.json"),
+    containerKey: "mcpServers",
+    restartRequired: true,
     verified: true,
   },
   {
