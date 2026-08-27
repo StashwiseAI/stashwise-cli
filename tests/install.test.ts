@@ -214,6 +214,37 @@ describe("detecting what is installed", () => {
     expect(vscode?.configPath).toBe("/Users/x/Library/Application Support/Code/User/mcp.json");
   });
 
+  it("finds Kimi Code by its config file", () => {
+    const found = detectClients(ENV, probe(["/Users/x/.kimi-code/mcp.json"])).find(
+      (d) => d.spec.id === "kimi-code",
+    );
+    expect(found?.installed).toBe(true);
+  });
+
+  it("finds Kimi Code by its directory, since its binary is rarely on PATH", () => {
+    // The binary installs to ~/.kimi-code/bin, which most shells never add to
+    // PATH, so detection cannot lean on it the way it does for codex.
+    const found = detectClients(ENV, probe(["/Users/x/.kimi-code"])).find(
+      (d) => d.spec.id === "kimi-code",
+    );
+    expect(found?.installed).toBe(true);
+  });
+
+  it("writes Kimi Code's config to .kimi-code, not .kimi", () => {
+    // `~/.kimi/mcp.json` belongs to the older kimi-cli from the same vendor.
+    // Its docs are the ones search returns, and following them produces a file
+    // Kimi Code silently never reads.
+    const kimi = detectClients(ENV, probe()).find((d) => d.spec.id === "kimi-code");
+    expect(kimi?.configPath).toBe("/Users/x/.kimi-code/mcp.json");
+  });
+
+  it("follows KIMI_CODE_HOME when it is set", () => {
+    const relocated: PathEnv = { ...ENV, kimiCodeHome: "/opt/kimi" };
+    const kimi = detectClients(relocated, probe()).find((d) => d.spec.id === "kimi-code");
+    expect(kimi?.configPath).toBe("/opt/kimi/mcp.json");
+    expect(kimi?.rootDir).toBe("/opt/kimi");
+  });
+
   it("gives Windows its own paths", () => {
     const win: PathEnv = { home: "C:\\Users\\x", platform: "win32", appData: "C:\\Users\\x\\AppData\\Roaming" };
     const vscode = detectClients(win, probe()).find((d) => d.spec.id === "vscode");

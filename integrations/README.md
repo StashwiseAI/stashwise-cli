@@ -1,6 +1,6 @@
 # Hosted Stashwise integration
 
-The hosted MCP endpoint is `https://stashwise-api.fly.dev/mcp/`. It uses OAuth and does not require Node, `npx`, an API token, or OS-keychain setup.
+The hosted MCP endpoint is `https://oauth.stashwise.co/mcp/`. It uses OAuth and does not require Node, `npx`, an API token, or OS-keychain setup.
 
 ## Codex
 
@@ -96,6 +96,6 @@ Approved plugins are pinned to a commit SHA in the community catalog and the pub
 
 ## Claude apps and other MCP hosts
 
-Add a remote custom connector with the URL `https://stashwise-api.fly.dev/mcp/`. Claude discovers OAuth from the server and returns to the connector after the user approves access on stashwise.co.
+Add a remote custom connector with the URL `https://oauth.stashwise.co/mcp/`. Claude discovers OAuth from the server and returns to the connector after the user approves access on stashwise.co.
 
 The npm CLI remains available for local stdio clients.

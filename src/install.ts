@@ -329,6 +329,7 @@ export async function runInstall(args: string[]): Promise<number> {
     home: homedir(),
     platform: process.platform,
     appData: process.env.APPDATA,
+    kimiCodeHome: process.env.KIMI_CODE_HOME,
   };
   const detections = detectClients(env, {
     exists: existsSync,
@@ -429,7 +430,12 @@ export async function runUninstall(args: string[]): Promise<number> {
     process.stderr.write(`${parsed.error}\n`);
     return 2;
   }
-  const env: PathEnv = { home: homedir(), platform: process.platform, appData: process.env.APPDATA };
+  const env: PathEnv = {
+    home: homedir(),
+    platform: process.platform,
+    appData: process.env.APPDATA,
+    kimiCodeHome: process.env.KIMI_CODE_HOME,
+  };
   const detections = detectClients(env, {
     exists: existsSync,
     onPath: (bin) =>

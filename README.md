@@ -102,7 +102,7 @@ configured from yours; use the hosted endpoint below for those.
 Codex, Cursor, and Claude can connect directly to the hosted Stashwise MCP endpoint:
 
 ```text
-https://stashwise-api.fly.dev/mcp/
+https://oauth.stashwise.co/mcp/
 ```
 
 The hosted connection uses OAuth. Installing the Claude Code or Codex plugin, or adding the URL as a remote MCP connector in Cursor or the Claude apps, opens Stashwise in the browser for approval. It does not require Node, `npx`, an API token, or OS-keychain setup. See [`integrations/`](./integrations/) for the client-specific assets.
