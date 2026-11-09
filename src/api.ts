@@ -148,16 +148,32 @@ export class ApiError extends Error {
  * like an ordinary failure an agent would retry.
  */
 async function readPaidBody(res: Response, paymentIdentifier: string): Promise<unknown> {
-  let body: { payment?: unknown } | null;
+  let body: { payment?: unknown; content?: unknown } | null;
   try {
-    body = (await res.json()) as { payment?: unknown } | null;
+    body = (await res.json()) as typeof body;
   } catch {
     throw new PaymentOutcomeUnknownError(paymentIdentifier);
+  }
+  if (isUnchargedDuplicate(res.status, body)) {
+    return body;
   }
   if (typeof body?.payment !== "object" || body.payment === null) {
     throw new PaymentOutcomeUnknownError(paymentIdentifier);
   }
   return body;
+}
+
+/** The one success with no payment in it: the wallet already had this item. */
+function isUnchargedDuplicate(
+  status: number,
+  body: { payment?: unknown; content?: unknown } | null,
+): boolean {
+  return (
+    status === DUPLICATE_NOT_CHARGED &&
+    body?.payment === null &&
+    typeof body.content === "object" &&
+    body.content !== null
+  );
 }
 
 export class StashwiseApi {

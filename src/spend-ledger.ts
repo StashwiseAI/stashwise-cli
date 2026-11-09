@@ -199,12 +199,19 @@ async function withLock<T>(work: (fence: Fence) => Promise<T>): Promise<T> {
   }
 }
 
+/** A day that cannot exist would never equal today, silently resetting the total. */
+function isCalendarDay(day: string): boolean {
+  if (!DAY_FORMAT.test(day)) return false;
+  const parsed = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === day;
+}
+
 function isDayEntry(value: unknown): value is DayEntry {
   if (typeof value !== "object" || value === null) return false;
   const { day, spent } = value as Partial<DayEntry>;
   return (
     typeof day === "string" &&
-    DAY_FORMAT.test(day) &&
+    isCalendarDay(day) &&
     typeof spent === "string" &&
     ATOMIC_AMOUNT.test(spent)
   );

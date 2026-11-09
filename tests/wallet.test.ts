@@ -781,6 +781,40 @@ describe("wallet recover", () => {
   });
 });
 
+describe("a duplicate of something this wallet already saved", () => {
+  // The body flow-app's _save_body sends: payment and credit are null, not absent.
+  const duplicate = {
+    status: 200,
+    body: {
+      content: { id: "existing-item", status: "completed" },
+      payment: null,
+      credit: null,
+      account: { user_id: "u1", created: false, agent_token: null, claim: null },
+    },
+  };
+
+  it("returns the saved item and gives the reservation back", async () => {
+    replies.push(challenge(), duplicate);
+    const response = await api().paidSave(await wallet(), null, URL_BODY);
+    expect(response.content).toEqual(duplicate.body.content);
+    expect(response.payment).toBeNull();
+    expect(await spentTodayFor(address)).toBe(0n);
+  });
+
+  it("shows the agent the item, not a payment failure", async () => {
+    replies.push(challenge(), duplicate);
+    const result = await callPaidTool(
+      api(),
+      config(),
+      { status: "ready", wallet: await wallet() },
+      "save_to_stashwise",
+      URL_BODY,
+    );
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(result.content[0].text).content.id).toBe("existing-item");
+  });
+});
+
 describe("a paid answer whose body is lost", () => {
   const paidNote = async () => api().paidNote(await wallet(), null, { title: "T", body: "B" });
 
@@ -811,6 +845,16 @@ describe("a paid answer whose body is lost", () => {
     expectUnknown(await paidNote().catch((err) => err));
     expect(await spentTodayFor(address)).toBe(80000n);
     expect(seen).toHaveLength(2);
+  });
+
+  it.each([
+    [201, { content: { id: "c" }, payment: null, credit: null, account: null }],
+    [202, { content: { id: "c" }, payment: null, credit: null, account: null }],
+    [200, { content: null, payment: null, credit: null, account: null }],
+    [200, { content: { id: "c" }, credit: null, account: null }],
+  ])("keeps a %i body that is not a known duplicate unknown: %j", async (status, body) => {
+    replies.push(challenge(), { status, body });
+    expectUnknown(await paidNote().catch((err) => err));
   });
 
   it("gives the agent the identifier and do not retry guidance", async () => {
@@ -1002,6 +1046,8 @@ describe("a corrupt spend ledger", () => {
     ["a numeric amount", JSON.stringify({ [key]: { day, spent: 5 } })],
     ["a bad day", JSON.stringify({ [key]: { day: "today", spent: "0" } })],
     ["a missing day", JSON.stringify({ [key]: { spent: "0" } })],
+    ["an impossible month and day", JSON.stringify({ [key]: { day: "2026-99-99", spent: "80000" } })],
+    ["a day past the end of its month", JSON.stringify({ [key]: { day: "2026-02-31", spent: "80000" } })],
     ["a corrupt entry for another wallet", JSON.stringify({ other: { day, spent: "-1" } })],
   ])("refuses a reservation on %s, and leaves the file", async (_name, content) => {
     const dir = join(home, ".stashwise");
