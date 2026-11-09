@@ -6,6 +6,7 @@
 // shares this binary and runs on every prompt.
 
 import { randomBytes } from "node:crypto";
+import { redactServerText } from "./redact.js";
 import {
   releaseSpend,
   reserveSpend,
@@ -60,7 +61,11 @@ export class WalletConfigError extends Error {}
 
 export class WalletCapError extends Error {}
 
-export class PaymentRefusedError extends Error {}
+export class PaymentRefusedError extends Error {
+  constructor(message: string) {
+    super(redactServerText(message));
+  }
+}
 
 /** The payment may have been charged and this client cannot tell. */
 export class PaymentOutcomeUnknownError extends Error {

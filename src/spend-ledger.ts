@@ -5,13 +5,15 @@
 // its amount here first under a lock file. An unreadable ledger refuses the
 // payment: resetting it would silently reset the cap.
 
+import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 
 const LOCK_RETRY_MS = 25;
 const LOCK_TIMEOUT_MS = 5_000;
-const LOCK_STALE_MS = 30_000;
+const DAY_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
+const ATOMIC_AMOUNT = /^\d+$/;
 
 interface DayEntry {
   day: string;
@@ -19,6 +21,12 @@ interface DayEntry {
 }
 
 type LedgerFile = Record<string, DayEntry>;
+
+interface LockOwner {
+  pid: number;
+  host: string;
+  token: string;
+}
 
 export class SpendLedgerError extends Error {}
 
@@ -53,36 +61,164 @@ function isMissing(err: unknown): boolean {
   );
 }
 
-async function withLock<T>(work: () => Promise<T>): Promise<T> {
-  await fs.mkdir(ledgerDir(), { recursive: true, mode: 0o700 });
-  const lock = `${ledgerPath()}.lock`;
+function errorCode(err: unknown): string | undefined {
+  return (err as { code?: string }).code;
+}
+
+function lockPath(): string {
+  return `${ledgerPath()}.lock`;
+}
+
+function reapGuardPath(): string {
+  return `${lockPath()}.reap`;
+}
+
+function parseOwner(raw: string): LockOwner | null {
+  try {
+    const owner = JSON.parse(raw) as Partial<LockOwner> | null;
+    return owner &&
+      Number.isSafeInteger(owner.pid) &&
+      (owner.pid as number) > 0 &&
+      typeof owner.host === "string" &&
+      typeof owner.token === "string"
+      ? (owner as LockOwner)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Who holds the lock: an owner, nobody ("free"), or something unreadable. */
+async function readHolder(): Promise<LockOwner | "free" | "unreadable"> {
+  try {
+    return parseOwner(await fs.readFile(lockPath(), "utf-8")) ?? "unreadable";
+  } catch (err) {
+    if (isMissing(err)) return "free";
+    throw err;
+  }
+}
+
+/**
+ * True only when the owner certainly no longer exists. Age proves nothing: a
+ * suspended process still holds its snapshot of the ledger and will write it.
+ */
+function ownerIsGone(owner: LockOwner): boolean {
+  if (owner.host !== hostname()) return false;
+  try {
+    process.kill(owner.pid, 0);
+    return false;
+  } catch (err) {
+    return errorCode(err) === "ESRCH";
+  }
+}
+
+/**
+ * Remove a dead owner's lock. The guard makes the check and the unlink one step:
+ * without it, a second reaper acting on the same dead owner would unlink the
+ * lock a live process had just taken.
+ */
+async function reapDeadOwner(token: string, claim: string): Promise<void> {
+  try {
+    await fs.link(claim, reapGuardPath());
+  } catch (err) {
+    if (errorCode(err) === "EEXIST") return;
+    throw err;
+  }
+  try {
+    const holder = await readHolder();
+    if (typeof holder === "object" && holder.token === token && ownerIsGone(holder)) {
+      await fs.unlink(lockPath()).catch(() => undefined);
+    }
+  } finally {
+    await fs.unlink(reapGuardPath()).catch(() => undefined);
+  }
+}
+
+async function acquire(claim: string): Promise<void> {
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
   for (;;) {
     try {
-      await (await fs.open(lock, "wx", 0o600)).close();
-      break;
+      // A hard link appears complete, so a lock is never seen without its owner.
+      await fs.link(claim, lockPath());
+      return;
     } catch (err) {
-      if ((err as { code?: string }).code !== "EEXIST") throw err;
-      const age = await fs
-        .stat(lock)
-        .then((s) => Date.now() - s.mtimeMs)
-        .catch(() => 0);
-      if (age > LOCK_STALE_MS) {
-        await fs.unlink(lock).catch(() => undefined);
-        continue;
-      }
-      if (Date.now() > deadline) {
+      if (errorCode(err) !== "EEXIST") throw err;
+    }
+    const holder = await readHolder();
+    if (holder === "unreadable") {
+      throw new SpendLedgerError(
+        `The wallet spend lock at ${lockPath()} has no readable owner, so no payment was made. If no Stashwise process is running, delete that file.`,
+      );
+    }
+    if (holder === "free") continue;
+    if (ownerIsGone(holder)) {
+      await reapDeadOwner(holder.token, claim);
+    }
+    if (Date.now() > deadline) {
+      throw new SpendLedgerError(
+        `Could not lock the wallet spend ledger, so no payment was made. Try again. If this keeps happening and no Stashwise process is running, delete ${lockPath()} and ${reapGuardPath()}.`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_MS));
+  }
+}
+
+/** Throws unless this holder still owns the lock. Called before every commit. */
+type Fence = () => Promise<void>;
+
+async function withLock<T>(work: (fence: Fence) => Promise<T>): Promise<T> {
+  await fs.mkdir(ledgerDir(), { recursive: true, mode: 0o700 });
+  const owner: LockOwner = {
+    pid: process.pid,
+    host: hostname(),
+    token: randomUUID(),
+  };
+  const claim = `${lockPath()}.${owner.token}`;
+  await fs.writeFile(claim, JSON.stringify(owner), { mode: 0o600, flag: "wx" });
+  try {
+    await acquire(claim);
+  } finally {
+    await fs.unlink(claim).catch(() => undefined);
+  }
+  const owned = async () => {
+    const holder = await readHolder();
+    return typeof holder === "object" && holder.token === owner.token;
+  };
+  try {
+    return await work(async () => {
+      if (!(await owned())) {
         throw new SpendLedgerError(
-          "Could not lock the wallet spend ledger, so no payment was made. Try again.",
+          "The wallet spend lock was lost before this change was saved, so no payment was made. Try again.",
         );
       }
-      await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_MS));
+    });
+  } finally {
+    if (await owned().catch(() => false)) {
+      await fs.unlink(lockPath()).catch(() => undefined);
     }
   }
+}
+
+function isDayEntry(value: unknown): value is DayEntry {
+  if (typeof value !== "object" || value === null) return false;
+  const { day, spent } = value as Partial<DayEntry>;
+  return (
+    typeof day === "string" &&
+    DAY_FORMAT.test(day) &&
+    typeof spent === "string" &&
+    ATOMIC_AMOUNT.test(spent)
+  );
+}
+
+function parseLedger(raw: string): LedgerFile | null {
   try {
-    return await work();
-  } finally {
-    await fs.unlink(lock).catch(() => undefined);
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return null;
+    }
+    return Object.values(parsed).every(isDayEntry) ? (parsed as LedgerFile) : null;
+  } catch {
+    return null;
   }
 }
 
@@ -94,23 +230,25 @@ async function readLedger(): Promise<LedgerFile> {
     if (isMissing(err)) return {};
     throw err;
   }
-  try {
-    const parsed = JSON.parse(raw) as LedgerFile;
-    for (const entry of Object.values(parsed)) {
-      BigInt(entry.spent);
-    }
-    return parsed;
-  } catch {
+  const ledger = parseLedger(raw);
+  if (ledger === null) {
     throw new SpendLedgerError(
       `The wallet spend ledger at ${ledgerPath()} is unreadable, so no payment was made. Inspect it, then delete it to reset today's total.`,
     );
   }
+  return ledger;
 }
 
-async function writeLedger(ledger: LedgerFile): Promise<void> {
-  const temp = `${ledgerPath()}.${process.pid}.tmp`;
-  await fs.writeFile(temp, JSON.stringify(ledger), { mode: 0o600 });
-  await fs.rename(temp, ledgerPath());
+async function writeLedger(ledger: LedgerFile, fence: Fence): Promise<void> {
+  const temp = `${ledgerPath()}.${randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(temp, JSON.stringify(ledger), { mode: 0o600 });
+    await fence();
+    await fs.rename(temp, ledgerPath());
+  } catch (err) {
+    await fs.unlink(temp).catch(() => undefined);
+    throw err;
+  }
 }
 
 function spentToday(ledger: LedgerFile, address: string, day: string): bigint {
@@ -125,7 +263,7 @@ export async function reserveSpend(
   perDayCap: bigint,
 ): Promise<ReserveOutcome> {
   const key = address.toLowerCase();
-  return withLock(async () => {
+  return withLock(async (fence) => {
     const ledger = await readLedger();
     const day = today();
     const spent = spentToday(ledger, key, day);
@@ -134,7 +272,7 @@ export async function reserveSpend(
       return { ok: false, spent };
     }
     ledger[key] = { day, spent: spentAfter.toString() };
-    await writeLedger(ledger);
+    await writeLedger(ledger, fence);
     return {
       ok: true,
       reservation: { address: key, day, amount },
@@ -145,7 +283,7 @@ export async function reserveSpend(
 
 /** Give a reservation back. Only for a payment proven not to have been charged. */
 export async function releaseSpend(reservation: Reservation): Promise<void> {
-  await withLock(async () => {
+  await withLock(async (fence) => {
     const ledger = await readLedger();
     const entry = ledger[reservation.address];
     if (!entry || entry.day !== reservation.day) return;
@@ -154,7 +292,7 @@ export async function releaseSpend(reservation: Reservation): Promise<void> {
       day: entry.day,
       spent: (left > 0n ? left : 0n).toString(),
     };
-    await writeLedger(ledger);
+    await writeLedger(ledger, fence);
   });
 }
 

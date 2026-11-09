@@ -9,6 +9,7 @@ import {
   type SiwxChallenge,
   type Wallet,
 } from "./wallet.js";
+import { redactServerText } from "./redact.js";
 
 export interface DeviceCodeStartResponse {
   device_code: string;
@@ -136,9 +137,27 @@ export interface X402RecoverResponse {
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
-    super(message);
+    super(redactServerText(message));
     this.name = "ApiError";
   }
+}
+
+/**
+ * A paid answer is only known once its whole body has been read. Headers alone
+ * say the server took the payment, so losing the body after them must not look
+ * like an ordinary failure an agent would retry.
+ */
+async function readPaidBody(res: Response, paymentIdentifier: string): Promise<unknown> {
+  let body: { payment?: unknown } | null;
+  try {
+    body = (await res.json()) as { payment?: unknown } | null;
+  } catch {
+    throw new PaymentOutcomeUnknownError(paymentIdentifier);
+  }
+  if (typeof body?.payment !== "object" || body.payment === null) {
+    throw new PaymentOutcomeUnknownError(paymentIdentifier);
+  }
+  return body;
 }
 
 export class StashwiseApi {
@@ -163,8 +182,11 @@ export class StashwiseApi {
     const challenge = res.status === 402 && payer
       ? res.headers.get(PAYMENT_REQUIRED_HEADER)
       : null;
+    let paymentIdentifier: string | null = null;
     if (challenge && payer) {
-      res = await this.payAndRetry(send, await payer.prepare(challenge));
+      const payment = await payer.prepare(challenge);
+      paymentIdentifier = payment.identifier;
+      res = await this.payAndRetry(send, payment);
     }
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -172,6 +194,9 @@ export class StashwiseApi {
     }
     if (res.status === 204) {
       return undefined as T;
+    }
+    if (paymentIdentifier) {
+      return (await readPaidBody(res, paymentIdentifier)) as T;
     }
     return (await res.json()) as T;
   }
@@ -195,10 +220,9 @@ export class StashwiseApi {
       await payment.release().catch(() => undefined);
     }
     if (res.status === 402) {
-      const refused = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new PaymentRefusedError(
-        `The server refused the payment: ${refused.error ?? "no reason given"}`,
-      );
+      const refused = (await res.json().catch(() => null)) as { error?: unknown } | null;
+      const reason = typeof refused?.error === "string" ? refused.error : "no reason given";
+      throw new PaymentRefusedError(`The server refused the payment: ${reason}`);
     }
     if (res.status >= 500) {
       throw new PaymentOutcomeUnknownError(payment.identifier);

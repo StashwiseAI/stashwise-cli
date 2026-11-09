@@ -1,7 +1,18 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  promises as fsPromises,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspect } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,7 +33,8 @@ const { ApiError, StashwiseApi } = await import("../src/api.js");
 const { getWalletClaimCredential, getWalletToken } = await import("../src/keychain.js");
 const { runDoctor } = await import("../src/doctor.js");
 const { TOOL_DEFINITIONS, toolsFor } = await import("../src/serve.js");
-const { spentTodayFor } = await import("../src/spend-ledger.js");
+const { reserveSpend, SpendLedgerError, spentTodayFor } = await import("../src/spend-ledger.js");
+const { redactServerText } = await import("../src/redact.js");
 const {
   atomicToUsd,
   formatSiweMessage,
@@ -56,6 +68,12 @@ interface Seen {
 type Reply = {
   status: number;
   body?: unknown;
+  /** Answer from what was received, for a server that echoes the request. */
+  echo?: (request: Seen) => unknown;
+  /** Sent as is instead of JSON. */
+  raw?: string;
+  /** Send the status and headers, then cut the connection mid body. */
+  cutBody?: boolean;
   headers?: Record<string, string>;
   destroy?: boolean;
 };
@@ -156,14 +174,20 @@ beforeEach(async () => {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
-      seen.push({ method: req.method ?? "", url: req.url ?? "", headers: req.headers, body });
+      const request = { method: req.method ?? "", url: req.url ?? "", headers: req.headers, body };
+      seen.push(request);
       const reply = replies.shift() ?? { status: 500, body: { detail: "no reply queued" } };
       if (reply.destroy) {
         req.socket.destroy();
         return;
       }
+      if (reply.cutBody) {
+        res.writeHead(reply.status, { "Content-Type": "application/json", "Content-Length": "1000" });
+        res.write('{"content"', () => req.socket.destroy());
+        return;
+      }
       res.writeHead(reply.status, { "Content-Type": "application/json", ...reply.headers });
-      res.end(JSON.stringify(reply.body ?? {}));
+      res.end(reply.raw ?? JSON.stringify(reply.echo ? reply.echo(request) : (reply.body ?? {})));
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -664,6 +688,26 @@ describe("wallet recover", () => {
     expect(await recoverMessageAddress({ message, signature: proof.signature })).toBe(address);
   });
 
+  it("keeps a recovery proof the server echoes out of stderr", async () => {
+    env();
+    const siweText = "api.test wants you to sign in with your Ethereum account:\n0xabc\n\nNonce: abc123";
+    replies.push(recoveryChallenge(new URL(base).host), {
+      status: 500,
+      echo: (request: Seen) => ({
+        detail: `bad proof ${request.headers["sign-in-with-x"]} from ${siweText}`,
+      }),
+    });
+    const output = capture();
+    expect(await runWallet(["recover"])).toBe(1);
+    const proof = String(seen[1].headers["sign-in-with-x"]);
+    expect(proof.length).toBeGreaterThan(40);
+    expect(output()).toContain("Recovery failed");
+    expect(output()).not.toContain(proof);
+    expect(output()).not.toContain(proof.slice(0, 40));
+    expect(output()).not.toContain("wants you to sign in");
+    expect(output()).not.toContain("abc123");
+  });
+
   it("clears a stored claim credential once the wallet is claimed", async () => {
     env();
     replies.push(recoveryChallenge(new URL(base).host), saved(firstContact));
@@ -734,6 +778,238 @@ describe("wallet recover", () => {
     capture();
     expect(await runWallet(["recover"])).toBe(2);
     expect(seen).toHaveLength(0);
+  });
+});
+
+describe("a paid answer whose body is lost", () => {
+  const paidNote = async () => api().paidNote(await wallet(), null, { title: "T", body: "B" });
+
+  function expectUnknown(err: unknown) {
+    expect(err).toBeInstanceOf(PaymentOutcomeUnknownError);
+    const identifier = (err as InstanceType<typeof PaymentOutcomeUnknownError>).paymentIdentifier;
+    expect(identifier).toMatch(/^pay_[0-9a-f]{32}$/);
+    expect(JSON.stringify(signedPayment(seen[1]))).toContain(identifier);
+    expect((err as Error).message).toContain(identifier);
+    expect((err as Error).message).toContain("do not r");
+  }
+
+  it.each([201, 202])("reports the outcome unknown when a %i body is cut off", async (status) => {
+    replies.push(challenge(), { status, cutBody: true });
+    expectUnknown(await paidNote().catch((err) => err));
+    expect(await spentTodayFor(address)).toBe(80000n);
+  });
+
+  it.each([
+    [201, "not json"],
+    [202, "<html>bad gateway</html>"],
+    [201, "null"],
+    [201, "[]"],
+    [201, "{}"],
+    [202, '{"payment": null}'],
+  ])("reports the outcome unknown for a %i body of %s", async (status, raw) => {
+    replies.push(challenge(), { status, raw });
+    expectUnknown(await paidNote().catch((err) => err));
+    expect(await spentTodayFor(address)).toBe(80000n);
+    expect(seen).toHaveLength(2);
+  });
+
+  it("gives the agent the identifier and do not retry guidance", async () => {
+    replies.push(challenge(), { status: 201, cutBody: true });
+    const result = await callPaidTool(
+      api(),
+      config(),
+      { status: "ready", wallet: await wallet() },
+      "create_stashwise_note",
+      { title: "T", body: "B" },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/pay_[0-9a-f]{32}/);
+    expect(result.content[0].text).toContain("do not r");
+  });
+});
+
+describe("server errors that echo payment material", () => {
+  const planted = `0x${"ab".repeat(65)}`;
+  const callTool = async () =>
+    callPaidTool(api(), config(), { status: "ready", wallet: await wallet() }, "save_to_stashwise", URL_BODY);
+
+  it("keeps a signature planted in a 402 body out of the tool result", async () => {
+    replies.push(challenge(), {
+      status: 402,
+      body: { error: `invalid authorization ${planted}` },
+    });
+    const result = await callTool();
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).not.toContain(planted);
+    expect(JSON.stringify(result)).not.toContain("abab");
+    expect(result.content[0].text).toContain("invalid authorization");
+  });
+
+  it("keeps the real signed payment out when a 402 echoes it", async () => {
+    replies.push(challenge(), {
+      status: 402,
+      echo: (request: Seen) => ({
+        error: `bad ${signedPayment(request).payload.signature} header ${request.headers["payment-signature"]}`,
+      }),
+    });
+    const result = await callTool();
+    const text = JSON.stringify(result);
+    expect(text).not.toContain(signedPayment(seen[1]).payload.signature);
+    expect(text).not.toContain(String(seen[1].headers["payment-signature"]).slice(0, 40));
+  });
+
+  it("redacts the raw body of any other refused request", async () => {
+    replies.push(challenge(), {
+      status: 409,
+      echo: (request: Seen) =>
+        `conflict for PAYMENT-SIGNATURE: ${request.headers["payment-signature"]} sig ${planted}`,
+    });
+    const result = await callTool();
+    const text = JSON.stringify(result);
+    expect(text).toContain("conflict for");
+    expect(text).not.toContain(planted);
+    expect(text).not.toContain(String(seen[1].headers["payment-signature"]).slice(0, 40));
+  });
+
+  it("does not print a refusal reason that is not text", async () => {
+    replies.push(challenge(), { status: 402, body: { error: { signature: planted } } });
+    const result = await callTool();
+    expect(JSON.stringify(result)).not.toContain(planted);
+    expect(result.content[0].text).toContain("no reason given");
+  });
+
+  it("keeps ordinary error text and addresses readable", () => {
+    expect(redactServerText("Wallet is linked to another account")).toBe(
+      "Wallet is linked to another account",
+    );
+    expect(redactServerText(`payer ${address} refused`)).toBe(`payer ${address} refused`);
+  });
+
+  it.each([
+    "Authorization: Bearer abc.def",
+    "token sw_at_shorttoken",
+    '{"agent_token":"short"}',
+    "claim_credential=PUBLICID.SECRET",
+  ])("redacts %s", (text) => {
+    expect(redactServerText(text)).toContain("[redacted]");
+    expect(redactServerText(text)).not.toMatch(/abc\.def|shorttoken|"short"|PUBLICID\.SECRET/);
+  });
+
+  it("bounds what a server can put in an error", () => {
+    expect(redactServerText("word ".repeat(1000)).length).toBeLessThanOrEqual(500);
+  });
+});
+
+describe("the spend lock", () => {
+  const lockTimeoutTest = 15_000;
+  const paths = () => {
+    const dir = join(home, ".stashwise");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    return { dir, ledger: join(dir, "x402-spend.json"), lock: join(dir, "x402-spend.json.lock") };
+  };
+  const owner = (over: Record<string, unknown> = {}) =>
+    JSON.stringify({ pid: process.pid, host: hostname(), token: "someone-else", ...over });
+  const deadPid = () => spawnSync(process.execPath, ["-e", ""]).pid;
+
+  it(
+    "never takes the lock from a suspended owner, however old the lock is",
+    async () => {
+      const { lock } = paths();
+      const realWrite = fsPromises.writeFile;
+      let resumeA = () => {};
+      let enteredA = () => {};
+      const entered = new Promise<void>((resolve) => (enteredA = resolve));
+      const resumed = new Promise<void>((resolve) => (resumeA = resolve));
+      let first = true;
+      vi.spyOn(fsPromises, "writeFile").mockImplementation(async (path, ...rest) => {
+        if (first && String(path).endsWith(".tmp")) {
+          first = false;
+          enteredA();
+          await resumed;
+        }
+        return realWrite(path as string, ...(rest as [string]));
+      });
+      const a = reserveSpend(address, 80000n, 80000n);
+      await entered;
+      const old = new Date(Date.now() - 3_600_000);
+      utimesSync(lock, old, old);
+      await expect(reserveSpend(address, 80000n, 80000n)).rejects.toBeInstanceOf(SpendLedgerError);
+      resumeA();
+      expect((await a).ok).toBe(true);
+      expect(await spentTodayFor(address)).toBe(80000n);
+      expect(existsSync(lock)).toBe(false);
+    },
+    lockTimeoutTest,
+  );
+
+  it(
+    "does not judge an owner on another machine",
+    async () => {
+      const { lock } = paths();
+      writeFileSync(lock, owner({ pid: deadPid(), host: "another-machine" }));
+      await expect(reserveSpend(address, 80000n, 80000n)).rejects.toBeInstanceOf(SpendLedgerError);
+      expect(existsSync(lock)).toBe(true);
+    },
+    lockTimeoutTest,
+  );
+
+  it("reaps a dead owner once, so racing payments still respect the cap", async () => {
+    const { dir, lock } = paths();
+    writeFileSync(lock, owner({ pid: deadPid() }));
+    const outcomes = await Promise.all(
+      Array.from({ length: 12 }, () => reserveSpend(address, 80000n, 160000n)),
+    );
+    expect(outcomes.filter((outcome) => outcome.ok)).toHaveLength(2);
+    expect(await spentTodayFor(address)).toBe(160000n);
+    expect(readdirSync(dir)).toEqual(["x402-spend.json"]);
+  });
+
+  it("refuses to commit, and leaves the new lock alone, once ownership is lost", async () => {
+    const { lock, ledger } = paths();
+    const realWrite = fsPromises.writeFile;
+    vi.spyOn(fsPromises, "writeFile").mockImplementation(async (path, ...rest) => {
+      const done = await realWrite(path as string, ...(rest as [string]));
+      if (String(path).endsWith(".tmp")) writeFileSync(lock, owner());
+      return done;
+    });
+    await expect(reserveSpend(address, 80000n, 80000n)).rejects.toBeInstanceOf(SpendLedgerError);
+    expect(existsSync(ledger)).toBe(false);
+    expect(readFileSync(lock, "utf-8")).toBe(owner());
+  });
+
+  it("refuses at once on a lock with no readable owner, and keeps it", async () => {
+    const { lock } = paths();
+    writeFileSync(lock, "");
+    await expect(reserveSpend(address, 80000n, 80000n)).rejects.toThrow(/no readable owner/);
+    expect(existsSync(lock)).toBe(true);
+  });
+});
+
+describe("a corrupt spend ledger", () => {
+  const day = new Date().toISOString().slice(0, 10);
+  const key = address.toLowerCase();
+
+  it.each([
+    ["an array root", "[]"],
+    ["a null root", "null"],
+    ["a string root", '"x"'],
+    ["a number root", "5"],
+    ["an entry that is not an object", JSON.stringify({ [key]: "x" })],
+    ["a null entry", JSON.stringify({ [key]: null })],
+    ["a negative amount", JSON.stringify({ [key]: { day, spent: "-80000" } })],
+    ["a hex amount", JSON.stringify({ [key]: { day, spent: "0x10" } })],
+    ["an empty amount", JSON.stringify({ [key]: { day, spent: "" } })],
+    ["a numeric amount", JSON.stringify({ [key]: { day, spent: 5 } })],
+    ["a bad day", JSON.stringify({ [key]: { day: "today", spent: "0" } })],
+    ["a missing day", JSON.stringify({ [key]: { spent: "0" } })],
+    ["a corrupt entry for another wallet", JSON.stringify({ other: { day, spent: "-1" } })],
+  ])("refuses a reservation on %s, and leaves the file", async (_name, content) => {
+    const dir = join(home, ".stashwise");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const ledger = join(dir, "x402-spend.json");
+    writeFileSync(ledger, content);
+    await expect(reserveSpend(address, 80000n, 80000n)).rejects.toBeInstanceOf(SpendLedgerError);
+    expect(readFileSync(ledger, "utf-8")).toBe(content);
   });
 });
 
