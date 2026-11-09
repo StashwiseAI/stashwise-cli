@@ -190,7 +190,15 @@ async function recover(wallet: Wallet): Promise<number> {
       new URL(config.apiBaseUrl).host,
     );
     const { account } = await api.walletRecover(proof);
-    if (!(await persistCredentials(config, wallet, account))) {
+    const stored = await persistCredentials(config, wallet, account);
+    // Recovery rotated the credential, so any earlier link is dead and this
+    // is the only time the new one is shown, stored or not.
+    if (account.claim?.url) {
+      process.stdout.write(
+        `Claim link, shown once. Give it to the person who should own this library, then do not repeat it:\n${account.claim.url}\n`,
+      );
+    }
+    if (!stored) {
       process.stderr.write(
         "Recovered, but the new credentials could not be saved on this machine. The previous token no longer works, so run this again once the keychain is available.\n",
       );

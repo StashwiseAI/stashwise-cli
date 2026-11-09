@@ -620,7 +620,7 @@ describe("wallet recover", () => {
     vi.stubEnv("STASHWISE_WALLET_PRIVATE_KEY", key);
   }
 
-  it("proves control, stores the new credentials and prints neither", async () => {
+  it("proves control, stores the new credentials and shows only the claim link", async () => {
     env();
     const host = new URL(base).host;
     replies.push(recoveryChallenge(host), {
@@ -631,7 +631,9 @@ describe("wallet recover", () => {
     const code = await runWallet(["recover"]);
     expect(code).toBe(0);
     expect(output()).not.toContain(AGENT_TOKEN);
-    expect(output()).not.toContain(CLAIM);
+    const claimUrl = firstContact.account.claim.url;
+    expect(output().split(claimUrl)).toHaveLength(2);
+    expect(output().replace(claimUrl, "")).not.toContain(CLAIM);
     expect(output()).toContain(address);
     expect(await getWalletToken(base, address)).toBe(AGENT_TOKEN);
     expect(await getWalletClaimCredential(base, address)).toBe(CLAIM);
@@ -673,6 +675,37 @@ describe("wallet recover", () => {
     });
     await runWallet(["recover"]);
     expect(await getWalletClaimCredential(base, address)).toBeNull();
+  });
+
+  it("shows no claim link for a wallet that is already claimed", async () => {
+    env();
+    replies.push(recoveryChallenge(new URL(base).host), {
+      status: 200,
+      body: { account: { ...firstContact.account, claim: null }, payment: null },
+    });
+    const output = capture();
+    expect(await runWallet(["recover"])).toBe(0);
+    expect(output()).not.toContain("Claim link");
+  });
+
+  it("still shows the claim link when the keychain fails", async () => {
+    env();
+    const original = keychain.set.bind(keychain);
+    keychain.set = () => {
+      throw new Error("locked");
+    };
+    try {
+      replies.push(recoveryChallenge(new URL(base).host), {
+        status: 200,
+        body: { account: firstContact.account, payment: null },
+      });
+      const output = capture();
+      expect(await runWallet(["recover"])).toBe(1);
+      expect(output().split(firstContact.account.claim.url)).toHaveLength(2);
+      expect(output()).not.toContain(AGENT_TOKEN);
+    } finally {
+      keychain.set = original;
+    }
   });
 
   it.each([
