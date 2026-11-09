@@ -1,7 +1,7 @@
 {
   "name": "@stashwiseapp/mcp",
   "version": "0.8.0",
-  "description": "Stashwise MCP server \u2014 query your saved library and wiki from any AI agent (Claude Code, Codex, Cursor, Claude desktop).",
+  "description": "Stashwise MCP server — query your saved library and wiki from any AI agent (Claude Code, Codex, Cursor, Claude desktop).",
   "type": "module",
   "bin": {
     "stashwise": "dist/index.js"
@@ -26,6 +26,7 @@
     "@modelcontextprotocol/sdk": "^1.4.0",
     "keytar": "^7.9.0",
     "open": "^10.1.0",
+    "viem": "^2.57.17",
     "zod": "^3.23.0"
   },
   "devDependencies": {

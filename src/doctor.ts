@@ -11,7 +11,9 @@ import {
   probeHookCommand,
   versionProbeFor,
 } from "./hook-install.js";
-import { getStoredToken, keychainBackend } from "./keychain.js";
+import { getStoredToken, getWalletToken, keychainBackend } from "./keychain.js";
+import { spentTodayFor } from "./spend-ledger.js";
+import { atomicToUsd, loadWallet } from "./wallet.js";
 
 interface CheckResult {
   label: string;
@@ -22,6 +24,45 @@ interface CheckResult {
 function fmt(check: CheckResult): string {
   const mark = check.ok ? "✓" : "✗";
   return `  ${mark}  ${check.label}: ${check.detail}`;
+}
+
+/** Presence, address and caps. The key itself is never read back out. */
+async function walletChecks(apiBaseUrl: string): Promise<CheckResult[]> {
+  const state = await loadWallet();
+  if (state.status === "absent") {
+    return [{ label: "Wallet", ok: true, detail: "not configured (optional)" }];
+  }
+  if (state.status === "invalid") {
+    return [{ label: "Wallet", ok: false, detail: state.problem }];
+  }
+  const { wallet } = state;
+  const checks: CheckResult[] = [
+    { label: "Wallet", ok: true, detail: `configured, address ${wallet.address}` },
+  ];
+  if (!wallet.caps) {
+    checks.push({
+      label: "Wallet caps",
+      ok: false,
+      detail: wallet.capsProblem ?? "not set",
+    });
+  } else {
+    const spent = await spentTodayFor(wallet.address).then(
+      (value) => `$${atomicToUsd(value)} committed today`,
+      () => "today's total is unreadable, so payments are refused",
+    );
+    checks.push({
+      label: "Wallet caps",
+      ok: true,
+      detail: `$${atomicToUsd(wallet.caps.perCall)} per call, $${atomicToUsd(wallet.caps.perDay)} per day, ${spent}`,
+    });
+  }
+  const token = await getWalletToken(apiBaseUrl, wallet.address);
+  checks.push({
+    label: "Wallet token",
+    ok: true,
+    detail: token ? "stored" : "none yet. The first paid save creates one",
+  });
+  return checks;
 }
 
 export async function runDoctor(): Promise<number> {
@@ -89,6 +130,8 @@ export async function runDoctor(): Promise<number> {
       }
     }
   }
+
+  checks.push(...(await walletChecks(config.apiBaseUrl)));
 
   // Informational: an uninstalled hook is a valid setup, so it never fails
   // doctor; the detail just points at the install command.

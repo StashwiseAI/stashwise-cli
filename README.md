@@ -367,6 +367,9 @@ Unknown flags are ignored, so a settings file written by a newer version never b
 | Variable | Default | Purpose |
 |---|---|---|
 | `STASHWISE_API_URL` | `https://stashwise-api.fly.dev/api/v1` | Backend base URL |
+| `STASHWISE_WALLET_PRIVATE_KEY` | not set | Opt in: an agent wallet that pays per save in USDC over x402 and adds the `save_to_stashwise` and `create_stashwise_note` tools |
+| `STASHWISE_WALLET_MAX_PER_CALL_USD` | not set | Required with a wallet. The most one save may cost |
+| `STASHWISE_WALLET_MAX_PER_DAY_USD` | not set | Required with a wallet. The most this machine commits per UTC day |
 | `STASHWISE_WEB_URL` | `https://stashwise.co` | Webapp base URL, used by `auth` |
 | `STASHWISE_HOOK_DEBUG` | unset | Set to `1` to log hook decisions to stderr |
 

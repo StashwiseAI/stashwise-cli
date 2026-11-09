@@ -53,11 +53,15 @@ function fallbackPath(): string {
   return join(homedir(), ".stashwise", "credentials.json");
 }
 
-async function readFallback(): Promise<string | null> {
+interface FallbackFile {
+  token?: string;
+  secrets?: Record<string, string>;
+}
+
+async function readFallbackFile(): Promise<FallbackFile | null> {
   try {
     const raw = await fs.readFile(fallbackPath(), "utf-8");
-    const parsed = JSON.parse(raw) as { token?: string };
-    return parsed.token ?? null;
+    return JSON.parse(raw) as FallbackFile;
   } catch (err) {
     if (
       err &&
@@ -71,26 +75,28 @@ async function readFallback(): Promise<string | null> {
   }
 }
 
-async function writeFallback(token: string): Promise<void> {
+async function writeFallbackFile(contents: FallbackFile): Promise<void> {
   const path = fallbackPath();
   await fs.mkdir(join(homedir(), ".stashwise"), { recursive: true });
-  await fs.writeFile(path, JSON.stringify({ token }), { mode: 0o600 });
+  await fs.writeFile(path, JSON.stringify(contents), { mode: 0o600 });
+}
+
+async function readFallback(): Promise<string | null> {
+  return (await readFallbackFile())?.token ?? null;
+}
+
+async function writeFallback(token: string): Promise<void> {
+  await writeFallbackFile({ ...(await readFallbackFile()), token });
 }
 
 async function deleteFallback(): Promise<void> {
-  try {
-    await fs.unlink(fallbackPath());
-  } catch (err) {
-    if (
-      err &&
-      typeof err === "object" &&
-      "code" in err &&
-      (err as { code: string }).code === "ENOENT"
-    ) {
-      return;
-    }
-    throw err;
+  const existing = await readFallbackFile();
+  if (!existing) return;
+  if (existing.secrets && Object.keys(existing.secrets).length > 0) {
+    await writeFallbackFile({ secrets: existing.secrets });
+    return;
   }
+  await fs.unlink(fallbackPath());
 }
 
 export async function getStoredToken(): Promise<string | null> {
@@ -117,6 +123,72 @@ export async function deleteStoredToken(): Promise<boolean> {
   }
   await deleteFallback();
   return true;
+}
+
+// Wallet credentials. Scoped to the backend as well as the address, because
+// the same address on two backends or networks is two separate accounts.
+
+function walletAccount(
+  apiBaseUrl: string,
+  address: string,
+  kind: "token" | "claim",
+): string {
+  return `wallet:${apiBaseUrl}:${address.toLowerCase()}:${kind}`;
+}
+
+async function getSecret(account: string): Promise<string | null> {
+  const keytar = await tryLoadKeytar();
+  if (keytar) {
+    return keytar.getPassword(SERVICE, account);
+  }
+  return (await readFallbackFile())?.secrets?.[account] ?? null;
+}
+
+async function setSecret(account: string, value: string | null): Promise<void> {
+  const keytar = await tryLoadKeytar();
+  if (keytar) {
+    if (value === null) {
+      await keytar.deletePassword(SERVICE, account);
+    } else {
+      await keytar.setPassword(SERVICE, account, value);
+    }
+    return;
+  }
+  const existing = (await readFallbackFile()) ?? {};
+  const secrets = { ...existing.secrets };
+  if (value === null) {
+    delete secrets[account];
+  } else {
+    secrets[account] = value;
+  }
+  await writeFallbackFile({ ...existing, secrets });
+}
+
+export function getWalletToken(
+  apiBaseUrl: string,
+  address: string,
+): Promise<string | null> {
+  return getSecret(walletAccount(apiBaseUrl, address, "token"));
+}
+
+export function getWalletClaimCredential(
+  apiBaseUrl: string,
+  address: string,
+): Promise<string | null> {
+  return getSecret(walletAccount(apiBaseUrl, address, "claim"));
+}
+
+/** A null claim credential clears the stored one: the wallet has been claimed. */
+export async function storeWalletCredentials(
+  apiBaseUrl: string,
+  address: string,
+  credentials: { token: string; claimCredential: string | null },
+): Promise<void> {
+  await setSecret(walletAccount(apiBaseUrl, address, "token"), credentials.token);
+  await setSecret(
+    walletAccount(apiBaseUrl, address, "claim"),
+    credentials.claimCredential,
+  );
 }
 
 export function keychainBackend(): "keytar" | "file" | "unknown" {
