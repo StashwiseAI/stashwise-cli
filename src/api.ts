@@ -2,6 +2,14 @@
 // flow needs. Kept intentionally small; this is not a general SDK.
 
 import type { CliConfig } from "./config.js";
+import {
+  PaymentOutcomeUnknownError,
+  PaymentRefusedError,
+  type PreparedPayment,
+  type SiwxChallenge,
+  type Wallet,
+} from "./wallet.js";
+import { redactServerText } from "./redact.js";
 
 export interface DeviceCodeStartResponse {
   device_code: string;
@@ -83,11 +91,89 @@ export interface MeResponse {
   subscription_tier: string;
 }
 
+const PAYMENT_REQUIRED_HEADER = "PAYMENT-REQUIRED";
+const PAYMENT_SIGNATURE_HEADER = "PAYMENT-SIGNATURE";
+// A duplicate of something this wallet already saved is answered 200, uncharged.
+const DUPLICATE_NOT_CHARGED = 200;
+// Refusals the server makes before any settlement can have happened. A 5xx is
+// deliberately absent: it says nothing about whether the transfer landed.
+const NOT_CHARGED_STATUSES = new Set([400, 401, 402, 403, 404, 409, 413, 422, 429]);
+
+export interface X402SaveBody {
+  source_url: string;
+  title?: string;
+  tags?: string[];
+  category_id?: string;
+  personal_notes?: string;
+}
+
+export interface X402NoteBody {
+  title: string;
+  body: string;
+  summary?: string;
+  tags?: string[];
+  links?: Record<string, unknown>[];
+  include_in_wiki?: boolean;
+}
+
+export interface X402Account {
+  user_id: string;
+  created: boolean;
+  agent_token: string | null;
+  claim: { credential: string; url: string } | null;
+}
+
+export interface X402SaveResponse {
+  content: Record<string, unknown> | null;
+  payment: Record<string, unknown> | null;
+  credit: Record<string, unknown> | null;
+  account: X402Account | null;
+}
+
+export interface X402RecoverResponse {
+  account: X402Account;
+  payment: Record<string, unknown> | null;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
-    super(message);
+    super(redactServerText(message));
     this.name = "ApiError";
   }
+}
+
+/**
+ * A paid answer is only known once its whole body has been read. Headers alone
+ * say the server took the payment, so losing the body after them must not look
+ * like an ordinary failure an agent would retry.
+ */
+async function readPaidBody(res: Response, paymentIdentifier: string): Promise<unknown> {
+  let body: { payment?: unknown; content?: unknown } | null;
+  try {
+    body = (await res.json()) as typeof body;
+  } catch {
+    throw new PaymentOutcomeUnknownError(paymentIdentifier);
+  }
+  if (isUnchargedDuplicate(res.status, body)) {
+    return body;
+  }
+  if (typeof body?.payment !== "object" || body.payment === null) {
+    throw new PaymentOutcomeUnknownError(paymentIdentifier);
+  }
+  return body;
+}
+
+/** The one success with no payment in it: the wallet already had this item. */
+function isUnchargedDuplicate(
+  status: number,
+  body: { payment?: unknown; content?: unknown } | null,
+): boolean {
+  return (
+    status === DUPLICATE_NOT_CHARGED &&
+    body?.payment === null &&
+    typeof body.content === "object" &&
+    body.content !== null
+  );
 }
 
 export class StashwiseApi {
@@ -95,17 +181,29 @@ export class StashwiseApi {
 
   private async request<T>(
     path: string,
-    init: RequestInit & { token?: string } = {},
+    init: RequestInit & { token?: string; payer?: Wallet } = {},
   ): Promise<T> {
-    const { token, headers, ...rest } = init;
-    const res = await fetch(`${this.config.apiBaseUrl}${path}`, {
-      ...rest,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(headers ?? {}),
-      },
-    });
+    const { token, headers, payer, ...rest } = init;
+    const send = (extra: Record<string, string> = {}) =>
+      fetch(`${this.config.apiBaseUrl}${path}`, {
+        ...rest,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(headers ?? {}),
+          ...extra,
+        },
+      });
+    let res = await send();
+    const challenge = res.status === 402 && payer
+      ? res.headers.get(PAYMENT_REQUIRED_HEADER)
+      : null;
+    let paymentIdentifier: string | null = null;
+    if (challenge && payer) {
+      const payment = await payer.prepare(challenge);
+      paymentIdentifier = payment.identifier;
+      res = await this.payAndRetry(send, payment);
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new ApiError(res.status, text || res.statusText);
@@ -113,7 +211,39 @@ export class StashwiseApi {
     if (res.status === 204) {
       return undefined as T;
     }
+    if (paymentIdentifier) {
+      return (await readPaidBody(res, paymentIdentifier)) as T;
+    }
     return (await res.json()) as T;
+  }
+
+  /**
+   * The one paid retry. From here on money may move, so the amount stays
+   * counted against today's cap unless the answer proves it was not charged.
+   */
+  private async payAndRetry(
+    send: (extra: Record<string, string>) => Promise<Response>,
+    payment: PreparedPayment,
+  ): Promise<Response> {
+    let res: Response;
+    try {
+      res = await send({ [PAYMENT_SIGNATURE_HEADER]: payment.header });
+    } catch {
+      throw new PaymentOutcomeUnknownError(payment.identifier);
+    }
+    if (res.status === DUPLICATE_NOT_CHARGED || NOT_CHARGED_STATUSES.has(res.status)) {
+      // Losing this only leaves the cap stricter than it needs to be.
+      await payment.release().catch(() => undefined);
+    }
+    if (res.status === 402) {
+      const refused = (await res.json().catch(() => null)) as { error?: unknown } | null;
+      const reason = typeof refused?.error === "string" ? refused.error : "no reason given";
+      throw new PaymentRefusedError(`The server refused the payment: ${reason}`);
+    }
+    if (res.status >= 500) {
+      throw new PaymentOutcomeUnknownError(payment.identifier);
+    }
+    return res;
   }
 
   startDeviceCode(clientLabel: string): Promise<DeviceCodeStartResponse> {
@@ -201,6 +331,55 @@ export class StashwiseApi {
       method: "POST",
       token,
       body: JSON.stringify({ content_ids: contentIds, category_id: categoryId }),
+    });
+  }
+
+  /** Save a URL as a paid save. The token, when there is one, unlocks credits. */
+  paidSave(
+    payer: Wallet,
+    token: string | null,
+    body: X402SaveBody,
+  ): Promise<X402SaveResponse> {
+    return this.request<X402SaveResponse>("/x402/saves", {
+      method: "POST",
+      token: token ?? undefined,
+      payer,
+      body: JSON.stringify(body),
+    });
+  }
+
+  paidNote(
+    payer: Wallet,
+    token: string | null,
+    body: X402NoteBody,
+  ): Promise<X402SaveResponse> {
+    return this.request<X402SaveResponse>("/x402/notes", {
+      method: "POST",
+      token: token ?? undefined,
+      payer,
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** Ask for a recovery challenge. The server answers 402 with no payment terms. */
+  async walletRecoveryChallenge(): Promise<SiwxChallenge> {
+    const res = await fetch(`${this.config.apiBaseUrl}/x402/account/recover`, {
+      method: "POST",
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      extensions?: Record<string, SiwxChallenge>;
+    };
+    const challenge = body.extensions?.["sign-in-with-x"];
+    if (res.status !== 402 || !challenge) {
+      throw new ApiError(res.status, "The server did not offer a recovery challenge.");
+    }
+    return challenge;
+  }
+
+  walletRecover(proof: string): Promise<X402RecoverResponse> {
+    return this.request<X402RecoverResponse>("/x402/account/recover", {
+      method: "POST",
+      headers: { "SIGN-IN-WITH-X": proof },
     });
   }
 

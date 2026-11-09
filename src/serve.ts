@@ -18,6 +18,12 @@ import { loadConfig } from "./config.js";
 import { getStoredToken } from "./keychain.js";
 import { notAuthenticatedHint } from "./messages.js";
 import { VERSION } from "./version.js";
+import { loadWallet, type WalletState } from "./wallet.js";
+import {
+  callPaidTool,
+  isPaidTool,
+  PAID_TOOL_DEFINITIONS,
+} from "./wallet-tools.js";
 
 const SearchInputSchema = z.object({
   query: z
@@ -256,9 +262,18 @@ export const TOOL_DEFINITIONS = [
   },
 ];
 
+/** With no wallet configured the tool list is exactly what it always was. */
+export function toolsFor(state: WalletState) {
+  return state.status === "absent"
+    ? TOOL_DEFINITIONS
+    : [...TOOL_DEFINITIONS, ...PAID_TOOL_DEFINITIONS];
+}
+
 export async function runServe(): Promise<number> {
   const config = loadConfig();
   const api = new StashwiseApi(config);
+  const walletState = await loadWallet();
+  const tools = toolsFor(walletState);
 
   const server = new Server(
     { name: "@stashwiseapp/mcp", version: VERSION },
@@ -266,10 +281,21 @@ export async function runServe(): Promise<number> {
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOL_DEFINITIONS,
+    tools,
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    // Before the signed in token check: a wallet is its own account.
+    if (walletState.status !== "absent" && isPaidTool(request.params.name)) {
+      return callPaidTool(
+        api,
+        config,
+        walletState,
+        request.params.name,
+        request.params.arguments,
+      );
+    }
+
     if (!TOOL_DEFINITIONS.some((tool) => tool.name === request.params.name)) {
       return {
         content: [

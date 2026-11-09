@@ -6,6 +6,7 @@
 //   stashwise search "..." → search from the terminal
 //   stashwise doctor       → config + token + backend health
 //   stashwise hook install → register the Claude Code prompt hook
+//   stashwise wallet recover → reissue an agent wallet's credentials
 //
 // Codex's review confirmed: a separate CLI binary buys nothing — single
 // binary with subcommand modes is the production pattern (Stripe, Linear,
@@ -28,6 +29,7 @@ import { runHookInstall, runHookUninstall } from "./hook-install.js";
 import { runSearch } from "./search.js";
 import { runServe } from "./serve.js";
 import { VERSION } from "./version.js";
+import { runWallet } from "./wallet-tools.js";
 
 type Mode =
   | "serve"
@@ -37,6 +39,7 @@ type Mode =
   | "search"
   | "doctor"
   | "hook"
+  | "wallet"
   | "help"
   | "version"
   | "unknown";
@@ -50,6 +53,7 @@ function parseMode(argv: string[]): Mode {
   if (raw === "search") return "search";
   if (raw === "doctor" || raw === "status") return "doctor";
   if (raw === "hook") return "hook";
+  if (raw === "wallet") return "wallet";
   if (raw === "--help" || raw === "-h" || raw === "help") return "help";
   if (raw === "--version" || raw === "-v" || raw === "version") return "version";
   return "unknown";
@@ -83,6 +87,7 @@ function printHelp(): void {
       "                             (Narrower than `stashwise install`: this is only the",
       "                             ambient prompt hook, not the MCP server registration.)",
       "  stashwise hook uninstall   Remove the prompt suggestion hook.",
+      "  stashwise wallet recover   Prove control of the configured wallet and reissue its credentials.",
       "  stashwise --version        Print the installed version.",
       "",
       "Install flags:",
@@ -108,6 +113,9 @@ function printHelp(): void {
       "Environment:",
       "  STASHWISE_API_URL   Override the backend URL (default https://stashwise-api.fly.dev/api/v1).",
       "  STASHWISE_WEB_URL   Override the webapp URL (default https://stashwise.co).",
+      "  STASHWISE_WALLET_PRIVATE_KEY        Opt in: an agent wallet that pays per save in USDC.",
+      "  STASHWISE_WALLET_MAX_PER_CALL_USD   Required with a wallet. Most one save may cost.",
+      "  STASHWISE_WALLET_MAX_PER_DAY_USD    Required with a wallet. Most this machine spends per UTC day.",
       "",
       "Not installed globally? Every command also works as:",
       `  ${STASHWISE_MCP_RUN_COMMAND} <subcommand>`,
@@ -140,6 +148,9 @@ async function main(): Promise<void> {
       break;
     case "hook":
       exitCode = await runHookMode(process.argv.slice(3));
+      break;
+    case "wallet":
+      exitCode = await runWallet(process.argv.slice(3));
       break;
     case "help":
       printHelp();
